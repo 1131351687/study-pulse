@@ -12,7 +12,8 @@ Implemented so far:
 - Health endpoint at `GET /api/health`.
 - Public settings placeholder at `GET /api/settings`.
 - React/Vite frontend app shell.
-- Navigation placeholders for Today, Journal, Tasks, Schedule, and Settings.
+- Navigation for Today, Journal, Tasks, Schedule, AI Config, and Settings.
+- Chinese/English interface language toggle.
 - Frontend health badge that checks whether the backend is online.
 - ActivityWatch today aggregation at `GET /api/activity/today`.
 - SQLite database stored at `data/study-pulse.sqlite` by default.
@@ -21,7 +22,8 @@ Implemented so far:
 - Schedule block create and delete.
 - Daily AI summary and next-day plan generation at `POST /api/ai/daily-plan`.
 - Saved generated plan lookup at `GET /api/ai/daily-plan/{date}`.
-- AI provider settings for `mock`, OpenAI-compatible APIs, and Ollama.
+- AI provider settings page for `mock`, OpenAI-compatible APIs, and Ollama.
+- One-command local startup script at `start-study-pulse.ps1`.
 
 Not implemented yet:
 
@@ -79,7 +81,21 @@ Set `STUDY_PULSE_AI_SEND_ACTIVITY_TITLES=false` if ActivityWatch window titles s
 
 ## Run Locally
 
-Start the backend API:
+For the simplest local launch on Windows, run:
+
+```powershell
+.\start-study-pulse.ps1
+```
+
+This creates `.venv` if needed, installs missing dependencies, starts the backend and frontend, and opens the app.
+
+You can also use npm:
+
+```powershell
+npm run start:local
+```
+
+To start services manually, start the backend API:
 
 ```powershell
 npm run dev:api

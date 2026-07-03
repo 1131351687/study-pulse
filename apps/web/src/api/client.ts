@@ -56,10 +56,16 @@ export type PublicSettings = {
   activitywatchUrl: string;
   host: string;
   port: number;
-  aiProvider: string;
-  aiEndpoint: string;
-  aiModel: string;
-  aiSendActivityTitles: boolean;
+};
+
+export type AIProviderName = "mock" | "openai" | "ollama";
+
+export type AIConfig = {
+  provider: AIProviderName;
+  endpoint: string;
+  model: string;
+  sendActivityTitles: boolean;
+  hasApiKey: boolean;
 };
 
 export type SuggestedTask = {
@@ -184,6 +190,26 @@ export async function deleteScheduleBlock(id: number): Promise<void> {
 export async function fetchSettings(): Promise<PublicSettings> {
   const response = await fetch(`${API_BASE_URL}/api/settings`);
   return readJson<PublicSettings>(response);
+}
+
+export async function fetchAIConfig(): Promise<AIConfig> {
+  const response = await fetch(`${API_BASE_URL}/api/ai/config`);
+  return readJson<AIConfig>(response);
+}
+
+export async function saveAIConfig(payload: {
+  provider: AIProviderName;
+  endpoint: string;
+  model: string;
+  apiKey?: string;
+  sendActivityTitles: boolean;
+}): Promise<AIConfig> {
+  const response = await fetch(`${API_BASE_URL}/api/ai/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<AIConfig>(response);
 }
 
 export async function fetchDailyPlan(date: string): Promise<DailyPlanResponse> {

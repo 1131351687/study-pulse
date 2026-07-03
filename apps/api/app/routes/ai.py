@@ -6,9 +6,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.ai.config_store import AIConfig, read_ai_config, save_ai_config
 from app.ai.daily_context import build_daily_context, today_string
 from app.ai.providers import create_provider
-from app.config import get_settings
 from app.db import get_connection
 
 router = APIRouter(tags=["ai"])
@@ -18,16 +18,62 @@ class DailyPlanRequest(BaseModel):
     date: str | None = None
 
 
+class AIConfigRequest(BaseModel):
+    provider: str
+    endpoint: str = ""
+    model: str = ""
+    apiKey: str | None = None
+    sendActivityTitles: bool = True
+
+
+@router.get("/ai/config")
+def read_config() -> dict[str, Any]:
+    config = read_ai_config()
+    return {
+        "provider": config.provider,
+        "endpoint": config.endpoint,
+        "model": config.model,
+        "sendActivityTitles": config.send_activity_titles,
+        "hasApiKey": bool(config.api_key),
+    }
+
+
+@router.put("/ai/config")
+def update_config(payload: AIConfigRequest) -> dict[str, Any]:
+    current = read_ai_config()
+    provider = payload.provider.strip().lower()
+    if provider not in {"mock", "openai", "ollama"}:
+        raise HTTPException(status_code=400, detail="Provider must be mock, openai, or ollama.")
+
+    api_key = current.api_key if payload.apiKey is None else payload.apiKey.strip()
+    config = save_ai_config(
+        AIConfig(
+            provider=provider,
+            endpoint=payload.endpoint.strip(),
+            model=payload.model.strip(),
+            api_key=api_key,
+            send_activity_titles=payload.sendActivityTitles,
+        )
+    )
+    return {
+        "provider": config.provider,
+        "endpoint": config.endpoint,
+        "model": config.model,
+        "sendActivityTitles": config.send_activity_titles,
+        "hasApiKey": bool(config.api_key),
+    }
+
+
 @router.post("/ai/daily-plan")
 def generate_daily_plan(payload: DailyPlanRequest) -> dict[str, Any]:
-    settings = get_settings()
+    config = read_ai_config()
     target_date = payload.date or today_string()
     context = build_daily_context(target_date)
     provider = create_provider(
-        settings.ai_provider,
-        settings.ai_endpoint,
-        settings.ai_model,
-        settings.ai_api_key,
+        config.provider,
+        config.endpoint,
+        config.model,
+        config.api_key,
     )
 
     try:
@@ -35,8 +81,8 @@ def generate_daily_plan(payload: DailyPlanRequest) -> dict[str, Any]:
     except (ValueError, KeyError, json.JSONDecodeError) as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
 
-    _save_generated_plan(target_date, settings.ai_provider, result)
-    return {"date": target_date, "provider": settings.ai_provider, "result": result}
+    _save_generated_plan(target_date, config.provider, result)
+    return {"date": target_date, "provider": config.provider, "result": result}
 
 
 @router.get("/ai/daily-plan/{date}")

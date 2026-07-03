@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date as date_type
 
+from app.ai.config_store import read_ai_config
 from app.activity.activitywatch import ActivityWatchClient
 from app.config import get_settings
 from app.db import get_connection, rows_to_dicts
@@ -9,13 +10,14 @@ from app.db import get_connection, rows_to_dicts
 
 def build_daily_context(target_date: str) -> dict:
     settings = get_settings()
+    ai_config = read_ai_config()
     journal = _read_journal(target_date)
     tasks = _read_tasks()
     schedule = _read_schedule(target_date)
     activity = ActivityWatchClient(settings.activitywatch_url).day_summary(target_date)
     activity_payload = activity.to_dict()
 
-    if not settings.ai_send_activity_titles:
+    if not ai_config.send_activity_titles:
         activity_payload["topTitles"] = []
 
     return {

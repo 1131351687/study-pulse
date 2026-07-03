@@ -10,6 +10,7 @@
     "install:api": "python -m pip install -r apps/api/requirements.txt",
     "dev:api": "python -m uvicorn app.main:app --reload --app-dir apps/api --host 127.0.0.1 --port 7788",
     "dev:web": "npm --workspace apps/web run dev -- --host 127.0.0.1 --port 5173",
+    "start:local": "powershell -ExecutionPolicy Bypass -File ./start-study-pulse.ps1",
     "build:web": "npm --workspace apps/web run build",
     "check:api": "python -c \"import sys; sys.path.insert(0, 'apps/api'); from app.main import app; print(app.title)\""
   },
