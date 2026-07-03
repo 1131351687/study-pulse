@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.ai.config_store import AIConfig, read_ai_config, save_ai_config
 from app.ai.daily_context import build_daily_context, today_string
-from app.ai.providers import create_provider
+from app.ai.providers import create_provider, test_provider_connection
 from app.db import get_connection
 
 router = APIRouter(tags=["ai"])
@@ -62,6 +62,25 @@ def update_config(payload: AIConfigRequest) -> dict[str, Any]:
         "sendActivityTitles": config.send_activity_titles,
         "hasApiKey": bool(config.api_key),
     }
+
+
+@router.post("/ai/test")
+def test_config(payload: AIConfigRequest | None = None) -> dict[str, Any]:
+    current = read_ai_config()
+    if payload is None:
+        config = current
+    else:
+        provider = payload.provider.strip().lower()
+        if provider not in {"mock", "openai", "ollama"}:
+            raise HTTPException(status_code=400, detail="Provider must be mock, openai, or ollama.")
+        config = AIConfig(
+            provider=provider,
+            endpoint=payload.endpoint.strip(),
+            model=payload.model.strip(),
+            api_key=current.api_key if payload.apiKey is None else payload.apiKey.strip(),
+            send_activity_titles=payload.sendActivityTitles,
+        )
+    return test_provider_connection(config.provider, config.endpoint, config.model, config.api_key)
 
 
 @router.post("/ai/daily-plan")

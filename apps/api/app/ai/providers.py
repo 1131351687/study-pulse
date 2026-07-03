@@ -92,6 +92,47 @@ def create_provider(provider: str, endpoint: str, model: str, api_key: str) -> A
             return MockAIProvider()
 
 
+def test_provider_connection(provider: str, endpoint: str, model: str, api_key: str) -> dict[str, Any]:
+    provider_name = provider.lower()
+    try:
+        match provider_name:
+            case "openai":
+                if not api_key:
+                    return {"ok": False, "provider": provider_name, "message": "API key is required for OpenAI-compatible providers."}
+                selected_endpoint = endpoint.rstrip("/") or "https://api.openai.com/v1"
+                selected_model = model or "gpt-4.1-mini"
+                _post_json(
+                    f"{selected_endpoint}/chat/completions",
+                    {
+                        "model": selected_model,
+                        "messages": [{"role": "user", "content": "Reply with ok."}],
+                        "temperature": 0,
+                        "max_tokens": 8,
+                    },
+                    {"Authorization": f"Bearer {api_key}"},
+                    timeout_seconds=20,
+                )
+                return {"ok": True, "provider": provider_name, "message": "OpenAI-compatible chat request succeeded."}
+            case "ollama":
+                selected_endpoint = endpoint.rstrip("/") or "http://localhost:11434"
+                selected_model = model or "llama3.1"
+                _post_json(
+                    f"{selected_endpoint}/api/chat",
+                    {
+                        "model": selected_model,
+                        "messages": [{"role": "user", "content": "Reply with ok."}],
+                        "stream": False,
+                    },
+                    {},
+                    timeout_seconds=20,
+                )
+                return {"ok": True, "provider": provider_name, "message": "Ollama chat request succeeded."}
+            case _:
+                return {"ok": True, "provider": "mock", "message": "Mock provider is always available."}
+    except ValueError as error:
+        return {"ok": False, "provider": provider_name, "message": str(error)}
+
+
 def _messages(context: dict[str, Any]) -> list[dict[str, str]]:
     return [
         {
@@ -106,7 +147,12 @@ def _messages(context: dict[str, Any]) -> list[dict[str, str]]:
     ]
 
 
-def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+def _post_json(
+    url: str,
+    payload: dict[str, Any],
+    headers: dict[str, str],
+    timeout_seconds: float = 45,
+) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
     request = Request(
         url,
@@ -115,9 +161,12 @@ def _post_json(url: str, payload: dict[str, Any], headers: dict[str, str]) -> di
         method="POST",
     )
     try:
-        with urlopen(request, timeout=45) as response:
+        with urlopen(request, timeout=timeout_seconds) as response:
             return json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError, OSError) as error:
+    except HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")[:500]
+        raise ValueError(f"AI provider request failed: HTTP {error.code} {error.reason}. {detail}") from error
+    except (URLError, TimeoutError, OSError) as error:
         raise ValueError(f"AI provider request failed: {error}") from error
 
 

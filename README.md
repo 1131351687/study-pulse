@@ -14,6 +14,8 @@ Implemented so far:
 - React/Vite frontend app shell.
 - Navigation for Today, Journal, Tasks, Schedule, AI Config, and Settings.
 - Chinese/English interface language toggle.
+- Dedicated History page for past daily progress.
+- Dedicated AI Plan page for per-day generation and review.
 - Frontend health badge that checks whether the backend is online.
 - ActivityWatch today aggregation at `GET /api/activity/today`.
 - SQLite database stored at `data/study-pulse.sqlite` by default.
@@ -23,6 +25,8 @@ Implemented so far:
 - Daily AI summary and next-day plan generation at `POST /api/ai/daily-plan`.
 - Saved generated plan lookup at `GET /api/ai/daily-plan/{date}`.
 - AI provider settings page for `mock`, OpenAI-compatible APIs, and Ollama.
+- AI provider connectivity test endpoint and UI button.
+- Runtime status panel and stop controls in the web UI.
 - One-command local startup script at `start-study-pulse.ps1`.
 
 Not implemented yet:

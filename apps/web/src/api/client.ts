@@ -68,6 +68,12 @@ export type AIConfig = {
   hasApiKey: boolean;
 };
 
+export type AITestResponse = {
+  ok: boolean;
+  provider: string;
+  message: string;
+};
+
 export type SuggestedTask = {
   title: string;
   plannedFor: string;
@@ -94,6 +100,38 @@ export type DailyPlanResponse = {
   provider: string;
   result: DailyPlanResult | null;
   updatedAt?: string;
+};
+
+export type HistoryScheduleBlock = {
+  startTime: string;
+  endTime: string;
+  title: string;
+};
+
+export type HistoryDay = {
+  date: string;
+  journalPreview: string;
+  journalUpdatedAt: string;
+  scheduleBlocks: HistoryScheduleBlock[];
+  hasPlan: boolean;
+  planProvider: string;
+  planSummary: string;
+  activityAvailable: boolean;
+  trackedSeconds: number;
+};
+
+export type RuntimeProcessStatus = {
+  running: boolean;
+  pid: number | null;
+  startedAt: string;
+  label: string;
+};
+
+export type RuntimeStatus = {
+  managed: boolean;
+  backend: RuntimeProcessStatus;
+  frontend: RuntimeProcessStatus;
+  updatedAt: string;
 };
 
 export async function fetchHealth(): Promise<HealthResponse> {
@@ -212,6 +250,21 @@ export async function saveAIConfig(payload: {
   return readJson<AIConfig>(response);
 }
 
+export async function testAIConfig(payload: {
+  provider: AIProviderName;
+  endpoint: string;
+  model: string;
+  apiKey?: string;
+  sendActivityTitles: boolean;
+}): Promise<AITestResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/ai/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<AITestResponse>(response);
+}
+
 export async function fetchDailyPlan(date: string): Promise<DailyPlanResponse> {
   const response = await fetch(`${API_BASE_URL}/api/ai/daily-plan/${date}`);
   return readJson<DailyPlanResponse>(response);
@@ -226,9 +279,31 @@ export async function generateDailyPlan(date: string): Promise<DailyPlanResponse
   return readJson<DailyPlanResponse>(response);
 }
 
+export async function fetchHistoryDays(days = 14): Promise<HistoryDay[]> {
+  const response = await fetch(`${API_BASE_URL}/api/history/days?days=${days}`);
+  return readJson<HistoryDay[]>(response);
+}
+
+export async function fetchRuntimeStatus(): Promise<RuntimeStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/runtime/status`);
+  return readJson<RuntimeStatus>(response);
+}
+
+export async function stopRuntime(): Promise<{ stopped: boolean; backendStopped: boolean; frontendStopped: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/api/runtime/stop`, { method: "POST" });
+  return readJson<{ stopped: boolean; backendStopped: boolean; frontendStopped: boolean }>(response);
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}`);
+    let detail = "";
+    try {
+      const payload = (await response.json()) as { detail?: unknown };
+      detail = typeof payload.detail === "string" ? payload.detail : JSON.stringify(payload.detail);
+    } catch {
+      detail = await response.text();
+    }
+    throw new Error(detail || `Request failed with status ${response.status}`);
   }
   return response.json() as Promise<T>;
 }

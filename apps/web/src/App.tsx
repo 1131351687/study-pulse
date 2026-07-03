@@ -4,12 +4,15 @@ import {
   BookOpen,
   CalendarDays,
   CheckSquare,
-  LayoutDashboard,
+  History as HistoryIcon,
   Languages,
+  LayoutDashboard,
   Plus,
+  RefreshCw,
   Save,
   Settings,
   Sparkles,
+  SquarePower,
   Trash2,
 } from "lucide-react";
 
@@ -19,26 +22,31 @@ import {
   deleteScheduleBlock,
   deleteTask,
   fetchAIConfig,
-  fetchHealth,
   fetchDailyPlan,
+  fetchHealth,
+  fetchHistoryDays,
   fetchJournal,
+  fetchRuntimeStatus,
   fetchSchedule,
   fetchSettings,
   fetchTasks,
   fetchTodayActivity,
   generateDailyPlan,
-  saveJournal,
   saveAIConfig,
+  saveJournal,
+  stopRuntime,
+  testAIConfig,
   updateTask,
   type ActivityEntry,
-  type AIConfig,
   type AIProviderName,
   type DailyPlanResponse,
   type DailyPlanResult,
   type HealthResponse,
+  type HistoryDay,
   type PlannedFor,
   type Priority,
   type PublicSettings,
+  type RuntimeStatus,
   type ScheduleBlock,
   type SuggestedScheduleBlock,
   type SuggestedTask,
@@ -47,7 +55,8 @@ import {
 } from "./api/client";
 
 type Language = "zh" | "en";
-type ViewId = "today" | "journal" | "tasks" | "schedule" | "aiConfig" | "settings";
+type ViewId = "today" | "history" | "journal" | "tasks" | "schedule" | "aiPlan" | "aiConfig" | "settings";
+type I18nKey = keyof typeof translations.en;
 
 type NavItem = {
   id: ViewId;
@@ -57,9 +66,11 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { id: "today", labelKey: "nav.today", icon: LayoutDashboard },
+  { id: "history", labelKey: "nav.history", icon: HistoryIcon },
   { id: "journal", labelKey: "nav.journal", icon: BookOpen },
   { id: "tasks", labelKey: "nav.tasks", icon: CheckSquare },
   { id: "schedule", labelKey: "nav.schedule", icon: CalendarDays },
+  { id: "aiPlan", labelKey: "nav.aiPlan", icon: Sparkles },
   { id: "aiConfig", labelKey: "nav.aiConfig", icon: Bot },
   { id: "settings", labelKey: "nav.settings", icon: Settings },
 ];
@@ -74,9 +85,11 @@ const translations = {
     "api.online": "API 在线",
     "api.offline": "API 离线",
     "nav.today": "今日",
+    "nav.history": "历史",
     "nav.journal": "日志",
     "nav.tasks": "任务",
     "nav.schedule": "日程",
+    "nav.aiPlan": "AI 计划",
     "nav.aiConfig": "AI 配置",
     "nav.settings": "设置",
     "today.overview": "今日概览",
@@ -85,25 +98,11 @@ const translations = {
     "today.activityBuckets": "活动桶",
     "today.topApps": "常用应用",
     "today.topTitles": "常见标题",
+    "today.backendHint": "后端状态和退出控制在“设置”页面。",
     "activity.loading": "正在读取 ActivityWatch 数据...",
     "activity.empty": "这组数据暂时为空。",
-    "aiPlan.title": "AI 计划",
-    "aiPlan.loading": "正在读取已保存计划...",
-    "aiPlan.saved": "已保存",
-    "aiPlan.none": "还没有生成计划。",
-    "aiPlan.loadError": "无法读取计划。",
-    "aiPlan.generating": "正在生成...",
-    "aiPlan.generatingShort": "生成中",
-    "aiPlan.generate": "生成计划",
-    "aiPlan.generatedWith": "生成模型",
-    "aiPlan.generateError": "无法生成计划。",
-    "aiPlan.empty": "今天还没有计划。",
-    "aiPlan.timeInsights": "时间洞察",
-    "aiPlan.openLoops": "未完成线索",
-    "aiPlan.suggestedTasks": "建议任务",
-    "aiPlan.tomorrowSchedule": "明日日程",
-    "aiPlan.anytime": "任意时间",
     "field.date": "日期",
+    "field.days": "天数",
     "journal.title": "每日学习日志",
     "journal.loading": "正在读取日志...",
     "journal.lastSaved": "上次保存",
@@ -154,6 +153,32 @@ const translations = {
     "schedule.addButton": "添加日程",
     "schedule.blocks": "日程块",
     "schedule.delete": "删除日程块",
+    "history.title": "历史进展",
+    "history.loading": "正在读取历史记录...",
+    "history.loadError": "无法读取历史记录。",
+    "history.empty": "暂无历史数据。",
+    "history.reload": "刷新历史",
+    "history.journal": "日志",
+    "history.schedule": "日程",
+    "history.plan": "AI 计划",
+    "history.noPlan": "无 AI 计划",
+    "history.activityUnavailable": "无 ActivityWatch 记录",
+    "aiPlan.title": "AI 计划",
+    "aiPlan.loading": "正在读取已保存计划...",
+    "aiPlan.saved": "已保存",
+    "aiPlan.none": "还没有生成计划。",
+    "aiPlan.loadError": "无法读取计划。",
+    "aiPlan.generating": "正在生成...",
+    "aiPlan.generatingShort": "生成中",
+    "aiPlan.generate": "生成计划",
+    "aiPlan.generatedWith": "生成模型",
+    "aiPlan.generateError": "无法生成计划。",
+    "aiPlan.empty": "这一天还没有计划。",
+    "aiPlan.timeInsights": "时间洞察",
+    "aiPlan.openLoops": "未完成线索",
+    "aiPlan.suggestedTasks": "建议任务",
+    "aiPlan.tomorrowSchedule": "建议日程",
+    "aiPlan.anytime": "任意时间",
     "aiConfig.title": "AI 配置",
     "aiConfig.loading": "正在读取 AI 配置...",
     "aiConfig.loaded": "AI 配置已读取。",
@@ -161,6 +186,7 @@ const translations = {
     "aiConfig.saving": "正在保存...",
     "aiConfig.saved": "AI 配置已保存。",
     "aiConfig.saveError": "无法保存 AI 配置。",
+    "aiConfig.testing": "正在测试连接...",
     "aiConfig.provider": "Provider",
     "aiConfig.endpoint": "Endpoint",
     "aiConfig.model": "Model",
@@ -169,10 +195,27 @@ const translations = {
     "aiConfig.apiKeyPlaceholder": "mock 或 ollama 可留空",
     "aiConfig.sendTitles": "允许把 ActivityWatch 窗口标题发送给 AI",
     "aiConfig.save": "保存配置",
+    "aiConfig.test": "测试连接",
+    "aiConfig.testOk": "连接可用",
+    "aiConfig.testFail": "连接失败",
     "settings.title": "设置",
     "settings.loading": "正在读取设置...",
     "settings.loaded": "设置已读取。",
     "settings.loadError": "无法读取设置。",
+    "runtime.title": "运行状态",
+    "runtime.loading": "正在读取运行状态...",
+    "runtime.loadError": "无法读取运行状态。",
+    "runtime.refresh": "刷新状态",
+    "runtime.stop": "退出运行",
+    "runtime.stopping": "正在停止...",
+    "runtime.stopDone": "停止命令已发送。",
+    "runtime.unmanaged": "当前不是通过启动脚本记录的受管运行。",
+    "runtime.running": "运行中",
+    "runtime.stopped": "未运行",
+    "runtime.backend": "后端",
+    "runtime.frontend": "前端",
+    "runtime.pid": "PID",
+    "runtime.updatedAt": "状态更新时间",
   },
   en: {
     "brand.subtitle": "Local learning workspace",
@@ -180,9 +223,11 @@ const translations = {
     "api.online": "API online",
     "api.offline": "API offline",
     "nav.today": "Today",
+    "nav.history": "History",
     "nav.journal": "Journal",
     "nav.tasks": "Tasks",
     "nav.schedule": "Schedule",
+    "nav.aiPlan": "AI Plan",
     "nav.aiConfig": "AI Config",
     "nav.settings": "Settings",
     "today.overview": "Today overview",
@@ -191,25 +236,11 @@ const translations = {
     "today.activityBuckets": "Activity buckets",
     "today.topApps": "Top applications",
     "today.topTitles": "Top titles",
+    "today.backendHint": "Backend status and stop controls are on the Settings page.",
     "activity.loading": "Loading ActivityWatch data...",
     "activity.empty": "No activity data for this list yet.",
-    "aiPlan.title": "AI plan",
-    "aiPlan.loading": "Loading saved plan...",
-    "aiPlan.saved": "Saved",
-    "aiPlan.none": "No generated plan yet.",
-    "aiPlan.loadError": "Could not load plan.",
-    "aiPlan.generating": "Generating...",
-    "aiPlan.generatingShort": "Generating",
-    "aiPlan.generate": "Generate plan",
-    "aiPlan.generatedWith": "Generated with",
-    "aiPlan.generateError": "Could not generate plan.",
-    "aiPlan.empty": "No plan for today.",
-    "aiPlan.timeInsights": "Time insights",
-    "aiPlan.openLoops": "Open loops",
-    "aiPlan.suggestedTasks": "Suggested tasks",
-    "aiPlan.tomorrowSchedule": "Tomorrow schedule",
-    "aiPlan.anytime": "Anytime",
     "field.date": "Date",
+    "field.days": "Days",
     "journal.title": "Daily journal",
     "journal.loading": "Loading journal...",
     "journal.lastSaved": "Last saved",
@@ -260,6 +291,32 @@ const translations = {
     "schedule.addButton": "Add block",
     "schedule.blocks": "Schedule blocks",
     "schedule.delete": "Delete block",
+    "history.title": "History progress",
+    "history.loading": "Loading history...",
+    "history.loadError": "Could not load history.",
+    "history.empty": "No history data yet.",
+    "history.reload": "Refresh history",
+    "history.journal": "Journal",
+    "history.schedule": "Schedule",
+    "history.plan": "AI plan",
+    "history.noPlan": "No AI plan",
+    "history.activityUnavailable": "No ActivityWatch record",
+    "aiPlan.title": "AI plan",
+    "aiPlan.loading": "Loading saved plan...",
+    "aiPlan.saved": "Saved",
+    "aiPlan.none": "No generated plan yet.",
+    "aiPlan.loadError": "Could not load plan.",
+    "aiPlan.generating": "Generating...",
+    "aiPlan.generatingShort": "Generating",
+    "aiPlan.generate": "Generate plan",
+    "aiPlan.generatedWith": "Generated with",
+    "aiPlan.generateError": "Could not generate plan.",
+    "aiPlan.empty": "No plan for this date.",
+    "aiPlan.timeInsights": "Time insights",
+    "aiPlan.openLoops": "Open loops",
+    "aiPlan.suggestedTasks": "Suggested tasks",
+    "aiPlan.tomorrowSchedule": "Suggested schedule",
+    "aiPlan.anytime": "Anytime",
     "aiConfig.title": "AI config",
     "aiConfig.loading": "Loading AI config...",
     "aiConfig.loaded": "AI config loaded.",
@@ -267,22 +324,38 @@ const translations = {
     "aiConfig.saving": "Saving...",
     "aiConfig.saved": "AI config saved.",
     "aiConfig.saveError": "Could not save AI config.",
+    "aiConfig.testing": "Testing connection...",
     "aiConfig.provider": "Provider",
     "aiConfig.endpoint": "Endpoint",
     "aiConfig.model": "Model",
-    "aiConfig.apiKey": "API Key",
+    "aiConfig.apiKey": "API key",
     "aiConfig.apiKeySaved": "Saved; leave blank to keep it",
     "aiConfig.apiKeyPlaceholder": "Can be blank for mock or Ollama",
     "aiConfig.sendTitles": "Send ActivityWatch window titles to AI",
     "aiConfig.save": "Save config",
+    "aiConfig.test": "Test connection",
+    "aiConfig.testOk": "Connection works",
+    "aiConfig.testFail": "Connection failed",
     "settings.title": "Settings",
     "settings.loading": "Loading settings...",
     "settings.loaded": "Settings loaded.",
     "settings.loadError": "Could not load settings.",
+    "runtime.title": "Runtime status",
+    "runtime.loading": "Loading runtime status...",
+    "runtime.loadError": "Could not load runtime status.",
+    "runtime.refresh": "Refresh status",
+    "runtime.stop": "Exit running app",
+    "runtime.stopping": "Stopping...",
+    "runtime.stopDone": "Stop command sent.",
+    "runtime.unmanaged": "This run was not recorded by the launcher script.",
+    "runtime.running": "Running",
+    "runtime.stopped": "Stopped",
+    "runtime.backend": "Backend",
+    "runtime.frontend": "Frontend",
+    "runtime.pid": "PID",
+    "runtime.updatedAt": "Status updated",
   },
 } as const;
-
-type I18nKey = keyof typeof translations.en;
 
 export function App() {
   const [activeView, setActiveView] = useState<ViewId>("today");
@@ -316,11 +389,11 @@ export function App() {
       });
   }, []);
 
-  const content = useMemo(() => renderView(activeView, activity, activityError, language), [
+  const content = useMemo(() => renderView(activeView, language, activity, activityError), [
     activeView,
+    language,
     activity,
     activityError,
-    language,
   ]);
 
   function handleLanguageChange(nextLanguage: Language) {
@@ -360,7 +433,7 @@ export function App() {
       <main className="main-panel">
         <header className="topbar">
           <div>
-            <p className="eyebrow">v0.4 local workspace</p>
+            <p className="eyebrow">v0.5 local workspace</p>
             <h2>{viewTitle(activeView, language)}</h2>
           </div>
           <div className="topbar-actions">
@@ -375,97 +448,25 @@ export function App() {
   );
 }
 
-function LanguageToggle({
-  language,
-  onChange,
-}: {
-  language: Language;
-  onChange: (language: Language) => void;
-}) {
-  return (
-    <div className="segmented-control" aria-label={t("language.label", language)}>
-      <Languages aria-hidden="true" size={16} />
-      <button className={language === "zh" ? "active" : ""} onClick={() => onChange("zh")} type="button">
-        中
-      </button>
-      <button className={language === "en" ? "active" : ""} onClick={() => onChange("en")} type="button">
-        EN
-      </button>
-    </div>
-  );
-}
-
-function HealthBadge({
-  health,
-  error,
-  language,
-}: {
-  health: HealthResponse | null;
-  error: string | null;
-  language: Language;
-}) {
-  if (health) {
-    return (
-      <div className="status-badge online" title={`${health.appName} ${health.version}`}>
-        {t("api.online", language)}
-      </div>
-    );
-  }
-
-  return (
-    <div className="status-badge offline" title={error ?? "Backend unavailable"}>
-      {t("api.offline", language)}
-    </div>
-  );
-}
-
-function viewTitle(view: ViewId, language: Language): string {
-  const match = navItems.find((item) => item.id === view);
-  return match ? t(match.labelKey, language) : t("nav.today", language);
-}
-
 function renderView(
   view: ViewId,
+  language: Language,
   activity: TodayActivityResponse | null,
   activityError: string | null,
-  language: Language,
 ) {
   switch (view) {
     case "today":
-      return (
-        <section className="content-grid">
-          <Panel title={t("today.overview", language)}>
-            <dl className="metric-grid">
-              <div>
-                <dt>{t("today.trackedTime", language)}</dt>
-                <dd>{activity ? formatDuration(activity.totalSeconds) : "--"}</dd>
-              </div>
-              <div>
-                <dt>{t("today.learningTime", language)}</dt>
-                <dd>--</dd>
-              </div>
-              <div>
-                <dt>{t("today.activityBuckets", language)}</dt>
-                <dd>{activity?.bucketCount ?? "--"}</dd>
-              </div>
-            </dl>
-            <StatusNote activity={activity} error={activityError} language={language} />
-          </Panel>
-          <Panel title={t("today.topApps", language)}>
-            <ActivityList entries={activity?.topApps ?? []} totalSeconds={activity?.totalSeconds ?? 0} language={language} />
-          </Panel>
-          <Panel title={t("today.topTitles", language)}>
-            <ActivityList entries={activity?.topTitles ?? []} totalSeconds={activity?.totalSeconds ?? 0} language={language} />
-          </Panel>
-          <DailyPlanPanel date={todayIso} language={language} />
-        </section>
-      );
+      return <TodayView language={language} activity={activity} activityError={activityError} />;
+    case "history":
+      return <HistoryView language={language} />;
     case "journal":
       return <JournalView language={language} />;
     case "tasks":
       return <TasksView language={language} />;
     case "schedule":
       return <ScheduleView language={language} />;
+    case "aiPlan":
+      return <AIPlanView language={language} />;
     case "aiConfig":
       return <AIConfigView language={language} />;
     case "settings":
@@ -473,7 +474,127 @@ function renderView(
   }
 }
 
-function DailyPlanPanel({ date, language }: { date: string; language: Language }) {
+function TodayView({
+  language,
+  activity,
+  activityError,
+}: {
+  language: Language;
+  activity: TodayActivityResponse | null;
+  activityError: string | null;
+}) {
+  return (
+    <section className="content-grid">
+      <Panel title={t("today.overview", language)}>
+        <dl className="metric-grid">
+          <div>
+            <dt>{t("today.trackedTime", language)}</dt>
+            <dd>{activity ? formatDuration(activity.totalSeconds) : "--"}</dd>
+          </div>
+          <div>
+            <dt>{t("today.learningTime", language)}</dt>
+            <dd>--</dd>
+          </div>
+          <div>
+            <dt>{t("today.activityBuckets", language)}</dt>
+            <dd>{activity?.bucketCount ?? "--"}</dd>
+          </div>
+        </dl>
+        <StatusNote activity={activity} error={activityError} language={language} />
+      </Panel>
+      <Panel title={t("today.topApps", language)}>
+        <ActivityList entries={activity?.topApps ?? []} totalSeconds={activity?.totalSeconds ?? 0} language={language} />
+      </Panel>
+      <Panel title={t("today.topTitles", language)}>
+        <ActivityList entries={activity?.topTitles ?? []} totalSeconds={activity?.totalSeconds ?? 0} language={language} />
+      </Panel>
+      <Panel title={t("nav.aiPlan", language)}>
+        <p className="summary-text">{t("today.backendHint", language)}</p>
+      </Panel>
+    </section>
+  );
+}
+
+function HistoryView({ language }: { language: Language }) {
+  const [days, setDays] = useState(14);
+  const [items, setItems] = useState<HistoryDay[]>([]);
+  const [status, setStatus] = useState(t("history.loading", language));
+
+  function loadHistory(targetDays = days) {
+    setStatus(t("history.loading", language));
+    fetchHistoryDays(targetDays)
+      .then((result) => {
+        setItems(result);
+        setStatus(result.length ? "" : t("history.empty", language));
+      })
+      .catch((error: unknown) => {
+        setStatus(error instanceof Error ? error.message : t("history.loadError", language));
+      });
+  }
+
+  useEffect(() => {
+    loadHistory(days);
+  }, [days, language]);
+
+  return (
+    <section className="single-column history-layout">
+      <Panel title={t("history.title", language)}>
+        <div className="panel-toolbar">
+          <label className="inline-field">
+            <span>{t("field.days", language)}</span>
+            <select value={days} onChange={(event) => setDays(Number(event.target.value))}>
+              <option value={7}>7</option>
+              <option value={14}>14</option>
+              <option value={30}>30</option>
+            </select>
+          </label>
+          <button className="secondary-button" onClick={() => loadHistory(days)} type="button">
+            <RefreshCw aria-hidden="true" size={16} />
+            {t("history.reload", language)}
+          </button>
+          <span>{status}</span>
+        </div>
+        {items.length === 0 ? (
+          <p className="empty-state">{status || t("history.empty", language)}</p>
+        ) : (
+          <ul className="history-list">
+            {items.map((item) => (
+              <li key={item.date} className="history-item">
+                <div className="history-header">
+                  <strong>{item.date}</strong>
+                  <span>
+                    {item.activityAvailable ? formatDuration(item.trackedSeconds) : t("history.activityUnavailable", language)}
+                  </span>
+                </div>
+                <div className="history-grid">
+                  <div>
+                    <small>{t("history.journal", language)}</small>
+                    <p>{item.journalPreview || "--"}</p>
+                  </div>
+                  <div>
+                    <small>{t("history.schedule", language)}</small>
+                    <p>
+                      {item.scheduleBlocks.length
+                        ? item.scheduleBlocks.map((block) => `${block.startTime}-${block.endTime} ${block.title}`).join(" | ")
+                        : "--"}
+                    </p>
+                  </div>
+                  <div>
+                    <small>{t("history.plan", language)}</small>
+                    <p>{item.hasPlan ? `${item.planProvider}: ${item.planSummary || "--"}` : t("history.noPlan", language)}</p>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+    </section>
+  );
+}
+
+function AIPlanView({ language }: { language: Language }) {
+  const [date, setDate] = useState(todayIso);
   const [plan, setPlan] = useState<DailyPlanResponse | null>(null);
   const [status, setStatus] = useState(t("aiPlan.loading", language));
   const [isGenerating, setIsGenerating] = useState(false);
@@ -505,16 +626,22 @@ function DailyPlanPanel({ date, language }: { date: string; language: Language }
   }
 
   return (
-    <Panel title={t("aiPlan.title", language)}>
-      <div className="panel-toolbar">
-        <button className="primary-button" onClick={handleGenerate} disabled={isGenerating} type="button">
-          <Sparkles aria-hidden="true" size={16} />
-          {isGenerating ? t("aiPlan.generatingShort", language) : t("aiPlan.generate", language)}
-        </button>
-        <span>{status}</span>
-      </div>
-      {plan?.result ? <DailyPlanContent result={plan.result} language={language} /> : <p className="empty-state">{t("aiPlan.empty", language)}</p>}
-    </Panel>
+    <section className="single-column">
+      <Panel title={t("aiPlan.title", language)}>
+        <div className="panel-toolbar">
+          <label className="inline-field">
+            <span>{t("field.date", language)}</span>
+            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+          </label>
+          <button className="primary-button" onClick={handleGenerate} disabled={isGenerating} type="button">
+            <Sparkles aria-hidden="true" size={16} />
+            {isGenerating ? t("aiPlan.generatingShort", language) : t("aiPlan.generate", language)}
+          </button>
+          <span>{status}</span>
+        </div>
+        {plan?.result ? <DailyPlanContent result={plan.result} language={language} /> : <p className="empty-state">{t("aiPlan.empty", language)}</p>}
+      </Panel>
+    </section>
   );
 }
 
@@ -572,7 +699,8 @@ function SuggestedTasks({ tasks, language }: { tasks: SuggestedTask[]; language:
           <li key={`${task.title}-${task.reason}`}>
             <strong>{task.title}</strong>
             <span>
-              {task.plannedFor}{task.reason ? ` / ${task.reason}` : ""}
+              {task.plannedFor}
+              {task.reason ? ` / ${task.reason}` : ""}
             </span>
           </li>
         ))}
@@ -755,7 +883,8 @@ function TasksView({ language }: { language: Language }) {
                   <span>{task.title}</span>
                 </label>
                 <small>
-                  {task.plannedFor} / {task.priority}{task.area ? ` / ${task.area}` : ""}
+                  {task.plannedFor} / {task.priority}
+                  {task.area ? ` / ${task.area}` : ""}
                 </small>
                 <button className="icon-button" onClick={() => handleDelete(task.id)} type="button" title={t("tasks.delete", language)}>
                   <Trash2 aria-hidden="true" size={16} />
@@ -887,22 +1016,35 @@ function AIConfigView({ language }: { language: Language }) {
       .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("aiConfig.loadError", language)));
   }, [language]);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatus(t("aiConfig.saving", language));
-    saveAIConfig({
+  function currentPayload() {
+    return {
       provider,
       endpoint,
       model,
       apiKey: apiKey.trim() ? apiKey : undefined,
       sendActivityTitles,
-    })
+    };
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setStatus(t("aiConfig.saving", language));
+    saveAIConfig(currentPayload())
       .then((config) => {
         setHasApiKey(config.hasApiKey);
         setApiKey("");
         setStatus(t("aiConfig.saved", language));
       })
       .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("aiConfig.saveError", language)));
+  }
+
+  function handleTest() {
+    setStatus(t("aiConfig.testing", language));
+    testAIConfig(currentPayload())
+      .then((result) => {
+        setStatus(`${result.ok ? t("aiConfig.testOk", language) : t("aiConfig.testFail", language)}: ${result.message}`);
+      })
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("aiConfig.testFail", language)));
   }
 
   return (
@@ -937,17 +1079,17 @@ function AIConfigView({ language }: { language: Language }) {
             />
           </label>
           <label className="toggle-row">
-            <input
-              type="checkbox"
-              checked={sendActivityTitles}
-              onChange={(event) => setSendActivityTitles(event.target.checked)}
-            />
+            <input type="checkbox" checked={sendActivityTitles} onChange={(event) => setSendActivityTitles(event.target.checked)} />
             <span>{t("aiConfig.sendTitles", language)}</span>
           </label>
           <div className="form-actions">
             <button className="primary-button" type="submit">
               <Save aria-hidden="true" size={16} />
               {t("aiConfig.save", language)}
+            </button>
+            <button className="secondary-button" onClick={handleTest} type="button">
+              <Sparkles aria-hidden="true" size={16} />
+              {t("aiConfig.test", language)}
             </button>
             <span>{status}</span>
           </div>
@@ -972,7 +1114,7 @@ function SettingsView({ language }: { language: Language }) {
   }, [language]);
 
   return (
-    <section className="single-column">
+    <section className="single-column settings-layout">
       <Panel title={t("settings.title", language)}>
         {settings ? (
           <dl className="settings-list">
@@ -992,8 +1134,135 @@ function SettingsView({ language }: { language: Language }) {
         )}
         {settings ? <p className="form-status settings-status">{status}</p> : null}
       </Panel>
+      <RuntimePanel language={language} />
     </section>
   );
+}
+
+function RuntimePanel({ language }: { language: Language }) {
+  const [runtime, setRuntime] = useState<RuntimeStatus | null>(null);
+  const [status, setStatus] = useState(t("runtime.loading", language));
+  const [stopping, setStopping] = useState(false);
+
+  function loadRuntime() {
+    setStatus(t("runtime.loading", language));
+    fetchRuntimeStatus()
+      .then((result) => {
+        setRuntime(result);
+        setStatus("");
+      })
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("runtime.loadError", language)));
+  }
+
+  useEffect(() => {
+    loadRuntime();
+  }, [language]);
+
+  function handleStop() {
+    setStopping(true);
+    setStatus(t("runtime.stopping", language));
+    stopRuntime()
+      .then(() => setStatus(t("runtime.stopDone", language)))
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("runtime.loadError", language)))
+      .finally(() => setStopping(false));
+  }
+
+  return (
+    <Panel title={t("runtime.title", language)}>
+      <div className="panel-toolbar">
+        <button className="secondary-button" onClick={loadRuntime} type="button">
+          <RefreshCw aria-hidden="true" size={16} />
+          {t("runtime.refresh", language)}
+        </button>
+        <button className="danger-button" onClick={handleStop} disabled={stopping} type="button">
+          <SquarePower aria-hidden="true" size={16} />
+          {t("runtime.stop", language)}
+        </button>
+        <span>{status}</span>
+      </div>
+      {runtime ? (
+        <div className="runtime-grid">
+          <RuntimeCard title={t("runtime.backend", language)} process={runtime.backend} language={language} />
+          <RuntimeCard title={t("runtime.frontend", language)} process={runtime.frontend} language={language} />
+          <p className="form-status runtime-meta">
+            {runtime.managed ? `${t("runtime.updatedAt", language)}: ${runtime.updatedAt || "--"}` : t("runtime.unmanaged", language)}
+          </p>
+        </div>
+      ) : (
+        <p className="empty-state">{status}</p>
+      )}
+    </Panel>
+  );
+}
+
+function RuntimeCard({
+  title,
+  process,
+  language,
+}: {
+  title: string;
+  process: RuntimeStatus["backend"];
+  language: Language;
+}) {
+  return (
+    <div className="runtime-card">
+      <strong>{title}</strong>
+      <span>{process.running ? t("runtime.running", language) : t("runtime.stopped", language)}</span>
+      <small>
+        {t("runtime.pid", language)}: {process.pid ?? "--"}
+      </small>
+      <small>{process.startedAt || "--"}</small>
+    </div>
+  );
+}
+
+function LanguageToggle({
+  language,
+  onChange,
+}: {
+  language: Language;
+  onChange: (language: Language) => void;
+}) {
+  return (
+    <div className="segmented-control" aria-label={t("language.label", language)}>
+      <Languages aria-hidden="true" size={16} />
+      <button className={language === "zh" ? "active" : ""} onClick={() => onChange("zh")} type="button">
+        中
+      </button>
+      <button className={language === "en" ? "active" : ""} onClick={() => onChange("en")} type="button">
+        EN
+      </button>
+    </div>
+  );
+}
+
+function HealthBadge({
+  health,
+  error,
+  language,
+}: {
+  health: HealthResponse | null;
+  error: string | null;
+  language: Language;
+}) {
+  if (health) {
+    return (
+      <div className="status-badge online" title={`${health.appName} ${health.version}`}>
+        {t("api.online", language)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="status-badge offline" title={error ?? "Backend unavailable"}>
+      {t("api.offline", language)}
+    </div>
+  );
+}
+
+function viewTitle(view: ViewId, language: Language): string {
+  const match = navItems.find((item) => item.id === view);
+  return match ? t(match.labelKey, language) : t("nav.today", language);
 }
 
 function StatusNote({
@@ -1013,11 +1282,7 @@ function StatusNote({
     return <p className="status-note">{t("activity.loading", language)}</p>;
   }
 
-  return (
-    <p className={activity.available ? "status-note" : "status-note warning"}>
-      {activity.message}
-    </p>
-  );
+  return <p className={activity.available ? "status-note" : "status-note warning"}>{activity.message}</p>;
 }
 
 function ActivityList({

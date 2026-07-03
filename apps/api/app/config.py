@@ -16,6 +16,7 @@ class Settings:
     port: int = 7788
     activitywatch_url: str = "http://localhost:5600"
     database_path: Path = PROJECT_ROOT / "data" / "study-pulse.sqlite"
+    runtime_state_path: Path = PROJECT_ROOT / "data" / "runtime-state.json"
     ai_provider: str = "mock"
     ai_endpoint: str = ""
     ai_model: str = ""
@@ -44,6 +45,9 @@ def get_settings() -> Settings:
         ),
         database_path=Path(
             os.getenv("STUDY_PULSE_DB_PATH", str(PROJECT_ROOT / "data" / "study-pulse.sqlite"))
+        ),
+        runtime_state_path=Path(
+            os.getenv("STUDY_PULSE_RUNTIME_STATE_PATH", str(PROJECT_ROOT / "data" / "runtime-state.json"))
         ),
         ai_provider=os.getenv("STUDY_PULSE_AI_PROVIDER", "mock"),
         ai_endpoint=os.getenv("STUDY_PULSE_AI_ENDPOINT", ""),

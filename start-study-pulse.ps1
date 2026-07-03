@@ -7,9 +7,36 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ApiUrl = "http://127.0.0.1:7788"
 $WebUrl = "http://127.0.0.1:5173"
+$RuntimeStatePath = Join-Path $Root "data\runtime-state.json"
 
 function Test-PortOpen([int]$Port) {
     return [bool](Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+}
+
+function Get-PortProcessId([int]$Port) {
+    $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($listener) {
+        return [int]$listener.OwningProcess
+    }
+    return $null
+}
+
+function Write-RuntimeState() {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $RuntimeStatePath) | Out-Null
+    $state = [ordered]@{
+        updatedAt = (Get-Date).ToString("s")
+        backend = @{
+            label = "FastAPI"
+            pid = Get-PortProcessId 7788
+            startedAt = (Get-Date).ToString("s")
+        }
+        frontend = @{
+            label = "Vite"
+            pid = Get-PortProcessId 5173
+            startedAt = (Get-Date).ToString("s")
+        }
+    }
+    $state | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $RuntimeStatePath -Encoding UTF8
 }
 
 function Wait-HttpOk([string]$Url, [int]$Seconds) {
@@ -82,6 +109,7 @@ $apiReady = Wait-HttpOk "$ApiUrl/api/health" 25
 $webReady = Wait-HttpOk $WebUrl 25
 
 if ($apiReady -and $webReady) {
+    Write-RuntimeState
     Write-Host "StudyPulse is ready: $WebUrl"
     if (-not $NoBrowser) {
         Start-Process $WebUrl
