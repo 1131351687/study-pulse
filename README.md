@@ -2,7 +2,7 @@
 
 StudyPulse is a local-first learning workspace. It is designed to combine computer usage data from ActivityWatch, a daily learning journal, lightweight tasks, schedule blocks, and configurable AI providers to produce daily and weekly learning plans.
 
-The project is currently at `v0.3`: a local workspace with ActivityWatch aggregation, SQLite persistence, journals, tasks, and schedule blocks.
+The project is currently at `v0.4`: a local workspace with ActivityWatch aggregation, SQLite persistence, journals, tasks, schedule blocks, and mock-first AI daily planning.
 
 ## Current Scope
 
@@ -19,11 +19,14 @@ Implemented so far:
 - Daily journal save/load.
 - Task create, complete, and delete.
 - Schedule block create and delete.
+- Daily AI summary and next-day plan generation at `POST /api/ai/daily-plan`.
+- Saved generated plan lookup at `GET /api/ai/daily-plan/{date}`.
+- AI provider settings for `mock`, OpenAI-compatible APIs, and Ollama.
 
 Not implemented yet:
 
-- AI provider calls.
-- Daily or weekly plan generation.
+- Weekly plan generation.
+- One-click apply for AI suggestions.
 - Advanced editing, filtering, and calendar sync.
 
 ## Requirements
@@ -54,6 +57,25 @@ npm install
 ```
 
 Optional local environment configuration can be copied from `.env.example`. API keys and local config files should not be committed.
+
+AI defaults to the deterministic `mock` provider, so the app works without credentials. To use another provider, set these environment variables before starting the backend:
+
+```powershell
+$env:STUDY_PULSE_AI_PROVIDER="openai"
+$env:STUDY_PULSE_AI_ENDPOINT="https://api.openai.com/v1"
+$env:STUDY_PULSE_AI_MODEL="gpt-4.1-mini"
+$env:STUDY_PULSE_AI_API_KEY="your-api-key"
+```
+
+For Ollama:
+
+```powershell
+$env:STUDY_PULSE_AI_PROVIDER="ollama"
+$env:STUDY_PULSE_AI_ENDPOINT="http://localhost:11434"
+$env:STUDY_PULSE_AI_MODEL="llama3.1"
+```
+
+Set `STUDY_PULSE_AI_SEND_ACTIVITY_TITLES=false` if ActivityWatch window titles should be omitted from AI context.
 
 ## Run Locally
 
@@ -115,3 +137,6 @@ npm run build:web
 
 - Design spec: `docs/superpowers/specs/2026-07-03-study-pulse-design.md`
 - v0.1 plan: `docs/superpowers/plans/2026-07-03-v0.1-local-runnable-skeleton-plan.md`
+- v0.2 plan: `docs/superpowers/plans/2026-07-03-v0.2-activitywatch-aggregation-plan.md`
+- v0.3 plan: `docs/superpowers/plans/2026-07-03-v0.3-journal-tasks-schedule-plan.md`
+- v0.4 plan: `docs/superpowers/plans/2026-07-03-v0.4-ai-summary-planning-plan.md`

@@ -44,10 +44,17 @@ def init_db() -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS generated_plans (
+                date TEXT PRIMARY KEY,
+                provider TEXT NOT NULL,
+                content_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             """
         )
 
 
 def rows_to_dicts(rows: Iterator[sqlite3.Row]) -> list[dict]:
     return [dict(row) for row in rows]
-

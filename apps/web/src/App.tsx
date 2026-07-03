@@ -7,6 +7,7 @@ import {
   Plus,
   Save,
   Settings,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 
@@ -16,17 +17,25 @@ import {
   deleteScheduleBlock,
   deleteTask,
   fetchHealth,
+  fetchDailyPlan,
   fetchJournal,
   fetchSchedule,
+  fetchSettings,
   fetchTasks,
   fetchTodayActivity,
+  generateDailyPlan,
   saveJournal,
   updateTask,
   type ActivityEntry,
+  type DailyPlanResponse,
+  type DailyPlanResult,
   type HealthResponse,
   type PlannedFor,
   type Priority,
+  type PublicSettings,
   type ScheduleBlock,
+  type SuggestedScheduleBlock,
+  type SuggestedTask,
   type Task,
   type TodayActivityResponse,
 } from "./api/client";
@@ -47,7 +56,7 @@ const navItems: NavItem[] = [
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
-const todayIso = new Date().toISOString().slice(0, 10);
+const todayIso = localDateString(new Date());
 
 export function App() {
   const [activeView, setActiveView] = useState<ViewId>("today");
@@ -118,7 +127,7 @@ export function App() {
       <main className="main-panel">
         <header className="topbar">
           <div>
-            <p className="eyebrow">v0.3 local workspace</p>
+            <p className="eyebrow">v0.4 local workspace</p>
             <h2>{viewTitle(activeView)}</h2>
           </div>
           <HealthBadge health={health} error={healthError} />
@@ -183,13 +192,7 @@ function renderView(
           <Panel title="Top titles">
             <ActivityList entries={activity?.topTitles ?? []} totalSeconds={activity?.totalSeconds ?? 0} />
           </Panel>
-          <Panel title="Next milestones">
-            <ul className="plain-list">
-              <li>Persist daily activity snapshots in SQLite.</li>
-              <li>Add journal, tasks, and schedule editing.</li>
-              <li>Use AI to classify learning topics.</li>
-            </ul>
-          </Panel>
+          <DailyPlanPanel date={todayIso} />
         </section>
       );
     case "journal":
@@ -199,8 +202,134 @@ function renderView(
     case "schedule":
       return <ScheduleView />;
     case "settings":
-      return <Placeholder title="Settings" body="ActivityWatch and AI provider settings will be wired through the local API." />;
+      return <SettingsView />;
   }
+}
+
+function DailyPlanPanel({ date }: { date: string }) {
+  const [plan, setPlan] = useState<DailyPlanResponse | null>(null);
+  const [status, setStatus] = useState("Loading saved plan...");
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    fetchDailyPlan(date)
+      .then((response) => {
+        setPlan(response.result ? response : null);
+        setStatus(response.result ? `Saved ${response.updatedAt ?? ""}` : "No generated plan yet.");
+      })
+      .catch((error: unknown) => {
+        setStatus(error instanceof Error ? error.message : "Could not load plan.");
+      });
+  }, [date]);
+
+  function handleGenerate() {
+    setIsGenerating(true);
+    setStatus("Generating...");
+    generateDailyPlan(date)
+      .then((response) => {
+        setPlan(response);
+        setStatus(`Generated with ${response.provider}`);
+      })
+      .catch((error: unknown) => {
+        setStatus(error instanceof Error ? error.message : "Could not generate plan.");
+      })
+      .finally(() => setIsGenerating(false));
+  }
+
+  return (
+    <Panel title="AI plan">
+      <div className="panel-toolbar">
+        <button className="primary-button" onClick={handleGenerate} disabled={isGenerating} type="button">
+          <Sparkles aria-hidden="true" size={16} />
+          {isGenerating ? "Generating" : "Generate plan"}
+        </button>
+        <span>{status}</span>
+      </div>
+      {plan?.result ? <DailyPlanContent result={plan.result} /> : <p className="empty-state">No plan for today.</p>}
+    </Panel>
+  );
+}
+
+function DailyPlanContent({ result }: { result: DailyPlanResult }) {
+  return (
+    <div className="ai-plan">
+      {result.summary ? <p className="summary-text">{result.summary}</p> : null}
+      <TagList items={result.topics} />
+      <InsightList title="Time insights" items={result.timeInsights} />
+      <InsightList title="Open loops" items={result.unfinishedReasons} />
+      <SuggestedTasks tasks={result.suggestedTasks} />
+      <SuggestedSchedule blocks={result.tomorrowSchedule} />
+    </div>
+  );
+}
+
+function TagList({ items }: { items: string[] }) {
+  if (items.length === 0) {
+    return null;
+  }
+  return (
+    <div className="tag-list">
+      {items.map((item) => (
+        <span key={item}>{item}</span>
+      ))}
+    </div>
+  );
+}
+
+function InsightList({ title, items }: { title: string; items: string[] }) {
+  if (items.length === 0) {
+    return null;
+  }
+  return (
+    <section className="ai-section">
+      <h4>{title}</h4>
+      <ul className="plain-list compact-list">
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function SuggestedTasks({ tasks }: { tasks: SuggestedTask[] }) {
+  if (tasks.length === 0) {
+    return null;
+  }
+  return (
+    <section className="ai-section">
+      <h4>Suggested tasks</h4>
+      <ul className="suggestion-list">
+        {tasks.map((task) => (
+          <li key={`${task.title}-${task.reason}`}>
+            <strong>{task.title}</strong>
+            <span>
+              {task.plannedFor}{task.reason ? ` / ${task.reason}` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function SuggestedSchedule({ blocks }: { blocks: SuggestedScheduleBlock[] }) {
+  if (blocks.length === 0) {
+    return null;
+  }
+  return (
+    <section className="ai-section">
+      <h4>Tomorrow schedule</h4>
+      <ul className="suggestion-list schedule-suggestions">
+        {blocks.map((block) => (
+          <li key={`${block.startTime}-${block.endTime}-${block.title}`}>
+            <strong>{block.startTime && block.endTime ? `${block.startTime}-${block.endTime}` : "Anytime"}</strong>
+            <span>{block.title}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 function JournalView() {
@@ -465,6 +594,60 @@ function ScheduleView() {
   );
 }
 
+function SettingsView() {
+  const [settings, setSettings] = useState<PublicSettings | null>(null);
+  const [status, setStatus] = useState("Loading settings...");
+
+  useEffect(() => {
+    fetchSettings()
+      .then((result) => {
+        setSettings(result);
+        setStatus("Settings loaded.");
+      })
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Could not load settings."));
+  }, []);
+
+  return (
+    <section className="single-column">
+      <Panel title="Settings">
+        {settings ? (
+          <dl className="settings-list">
+            <div>
+              <dt>ActivityWatch</dt>
+              <dd>{settings.activitywatchUrl}</dd>
+            </div>
+            <div>
+              <dt>API</dt>
+              <dd>
+                {settings.host}:{settings.port}
+              </dd>
+            </div>
+            <div>
+              <dt>AI provider</dt>
+              <dd>{settings.aiProvider}</dd>
+            </div>
+            <div>
+              <dt>AI endpoint</dt>
+              <dd>{settings.aiEndpoint || "default"}</dd>
+            </div>
+            <div>
+              <dt>AI model</dt>
+              <dd>{settings.aiModel || "default"}</dd>
+            </div>
+            <div>
+              <dt>Activity titles</dt>
+              <dd>{settings.aiSendActivityTitles ? "sent to AI" : "hidden from AI"}</dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="empty-state">{status}</p>
+        )}
+        {settings ? <p className="form-status settings-status">{status}</p> : null}
+      </Panel>
+    </section>
+  );
+}
+
 function StatusNote({
   activity,
   error,
@@ -532,20 +715,18 @@ function formatDuration(seconds: number): string {
   return `${hours}h ${minutes}m`;
 }
 
+function localDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="panel">
       <h3>{title}</h3>
       {children}
-    </section>
-  );
-}
-
-function Placeholder({ title, body }: { title: string; body: string }) {
-  return (
-    <section className="panel placeholder-panel">
-      <h3>{title}</h3>
-      <p>{body}</p>
     </section>
   );
 }

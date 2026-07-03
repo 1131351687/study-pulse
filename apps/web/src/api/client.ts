@@ -52,6 +52,44 @@ export type ScheduleBlock = {
   updatedAt: string;
 };
 
+export type PublicSettings = {
+  activitywatchUrl: string;
+  host: string;
+  port: number;
+  aiProvider: string;
+  aiEndpoint: string;
+  aiModel: string;
+  aiSendActivityTitles: boolean;
+};
+
+export type SuggestedTask = {
+  title: string;
+  plannedFor: string;
+  reason: string;
+};
+
+export type SuggestedScheduleBlock = {
+  startTime: string;
+  endTime: string;
+  title: string;
+};
+
+export type DailyPlanResult = {
+  summary: string;
+  topics: string[];
+  timeInsights: string[];
+  unfinishedReasons: string[];
+  suggestedTasks: SuggestedTask[];
+  tomorrowSchedule: SuggestedScheduleBlock[];
+};
+
+export type DailyPlanResponse = {
+  date: string;
+  provider: string;
+  result: DailyPlanResult | null;
+  updatedAt?: string;
+};
+
 export async function fetchHealth(): Promise<HealthResponse> {
   const response = await fetch(`${API_BASE_URL}/api/health`);
 
@@ -141,6 +179,25 @@ export async function createScheduleBlock(payload: {
 export async function deleteScheduleBlock(id: number): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/schedule/${id}`, { method: "DELETE" });
   await readJson<{ deleted: boolean }>(response);
+}
+
+export async function fetchSettings(): Promise<PublicSettings> {
+  const response = await fetch(`${API_BASE_URL}/api/settings`);
+  return readJson<PublicSettings>(response);
+}
+
+export async function fetchDailyPlan(date: string): Promise<DailyPlanResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/ai/daily-plan/${date}`);
+  return readJson<DailyPlanResponse>(response);
+}
+
+export async function generateDailyPlan(date: string): Promise<DailyPlanResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/ai/daily-plan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ date }),
+  });
+  return readJson<DailyPlanResponse>(response);
 }
 
 async function readJson<T>(response: Response): Promise<T> {

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import date as date_type, datetime, time, timedelta
 import json
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -51,15 +51,20 @@ class ActivityWatchClient:
         self.timeout_seconds = timeout_seconds
 
     def today_summary(self) -> TodayActivitySummary:
+        return self.day_summary()
+
+    def day_summary(self, target_date: str | None = None) -> TodayActivitySummary:
         now = datetime.now().astimezone()
-        start = datetime.combine(now.date(), time.min, tzinfo=now.tzinfo)
+        day = _parse_date(target_date) if target_date else now.date()
+        start = datetime.combine(day, time.min, tzinfo=now.tzinfo)
+        end = now if day == now.date() else start + timedelta(days=1)
 
         try:
             buckets = self._get_json("/api/0/buckets/")
             selected = self._select_activity_buckets(buckets)
             if not selected:
                 return TodayActivitySummary(
-                    date=now.date().isoformat(),
+                    date=day.isoformat(),
                     available=True,
                     message="ActivityWatch is running, but no supported activity buckets were found.",
                     total_seconds=0,
@@ -72,12 +77,12 @@ class ActivityWatchClient:
             title_seconds: dict[str, float] = defaultdict(float)
 
             for bucket_id in selected:
-                events = self._read_events(bucket_id, start, now)
+                events = self._read_events(bucket_id, start, end)
                 self._aggregate_events(events, app_seconds, title_seconds)
 
             total_seconds = sum(app_seconds.values())
             return TodayActivitySummary(
-                date=now.date().isoformat(),
+                date=day.isoformat(),
                 available=True,
                 message="ActivityWatch data loaded.",
                 total_seconds=total_seconds,
@@ -87,7 +92,7 @@ class ActivityWatchClient:
             )
         except (HTTPError, URLError, TimeoutError, OSError, ValueError) as error:
             return TodayActivitySummary(
-                date=now.date().isoformat(),
+                date=day.isoformat(),
                 available=False,
                 message=f"ActivityWatch unavailable: {error}",
                 total_seconds=0,
@@ -159,3 +164,9 @@ class ActivityWatchClient:
         entries = sorted(seconds_by_name.items(), key=lambda item: item[1], reverse=True)[:limit]
         return [ActivityEntry(name=name, seconds=round(seconds, 2)) for name, seconds in entries]
 
+
+def _parse_date(value: str) -> date_type:
+    try:
+        return date_type.fromisoformat(value)
+    except ValueError:
+        return datetime.now().astimezone().date()

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db import init_db
-from app.routes import activity, health, journal, schedule, settings, tasks
+from app.routes import activity, ai, health, journal, schedule, settings, tasks
 
 
 def create_app() -> FastAPI:
@@ -21,6 +21,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router, prefix="/api")
     app.include_router(activity.router, prefix="/api")
+    app.include_router(ai.router, prefix="/api")
     app.include_router(journal.router, prefix="/api")
     app.include_router(tasks.router, prefix="/api")
     app.include_router(schedule.router, prefix="/api")
