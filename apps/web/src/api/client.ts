@@ -7,6 +7,21 @@ export type HealthResponse = {
   environment: string;
 };
 
+export type ActivityEntry = {
+  name: string;
+  seconds: number;
+};
+
+export type TodayActivityResponse = {
+  date: string;
+  available: boolean;
+  message: string;
+  totalSeconds: number;
+  bucketCount: number;
+  topApps: ActivityEntry[];
+  topTitles: ActivityEntry[];
+};
+
 export async function fetchHealth(): Promise<HealthResponse> {
   const response = await fetch(`${API_BASE_URL}/api/health`);
 
@@ -15,4 +30,14 @@ export async function fetchHealth(): Promise<HealthResponse> {
   }
 
   return response.json() as Promise<HealthResponse>;
+}
+
+export async function fetchTodayActivity(): Promise<TodayActivityResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/activity/today`);
+
+  if (!response.ok) {
+    throw new Error(`Activity request failed with status ${response.status}`);
+  }
+
+  return response.json() as Promise<TodayActivityResponse>;
 }

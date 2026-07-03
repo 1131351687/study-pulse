@@ -7,7 +7,13 @@ import {
   Settings,
 } from "lucide-react";
 
-import { fetchHealth, type HealthResponse } from "./api/client";
+import {
+  fetchHealth,
+  fetchTodayActivity,
+  type ActivityEntry,
+  type HealthResponse,
+  type TodayActivityResponse,
+} from "./api/client";
 
 type ViewId = "today" | "journal" | "tasks" | "schedule" | "settings";
 
@@ -29,6 +35,8 @@ export function App() {
   const [activeView, setActiveView] = useState<ViewId>("today");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
+  const [activity, setActivity] = useState<TodayActivityResponse | null>(null);
+  const [activityError, setActivityError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchHealth()
@@ -42,7 +50,23 @@ export function App() {
       });
   }, []);
 
-  const content = useMemo(() => renderView(activeView), [activeView]);
+  useEffect(() => {
+    fetchTodayActivity()
+      .then((result) => {
+        setActivity(result);
+        setActivityError(null);
+      })
+      .catch((error: unknown) => {
+        setActivity(null);
+        setActivityError(error instanceof Error ? error.message : "Activity data unavailable");
+      });
+  }, []);
+
+  const content = useMemo(() => renderView(activeView, activity, activityError), [
+    activeView,
+    activity,
+    activityError,
+  ]);
 
   return (
     <div className="app-shell">
@@ -109,7 +133,11 @@ function viewTitle(view: ViewId): string {
   return match?.label ?? "Today";
 }
 
-function renderView(view: ViewId) {
+function renderView(
+  view: ViewId,
+  activity: TodayActivityResponse | null,
+  activityError: string | null,
+) {
   switch (view) {
     case "today":
       return (
@@ -118,23 +146,30 @@ function renderView(view: ViewId) {
             <dl className="metric-grid">
               <div>
                 <dt>Tracked time</dt>
-                <dd>--</dd>
+                <dd>{activity ? formatDuration(activity.totalSeconds) : "--"}</dd>
               </div>
               <div>
                 <dt>Learning time</dt>
                 <dd>--</dd>
               </div>
               <div>
-                <dt>Completed tasks</dt>
-                <dd>0 / 0</dd>
+                <dt>Activity buckets</dt>
+                <dd>{activity?.bucketCount ?? "--"}</dd>
               </div>
             </dl>
+            <StatusNote activity={activity} error={activityError} />
+          </Panel>
+          <Panel title="Top applications">
+            <ActivityList entries={activity?.topApps ?? []} totalSeconds={activity?.totalSeconds ?? 0} />
+          </Panel>
+          <Panel title="Top titles">
+            <ActivityList entries={activity?.topTitles ?? []} totalSeconds={activity?.totalSeconds ?? 0} />
           </Panel>
           <Panel title="Next milestones">
             <ul className="plain-list">
-              <li>Connect ActivityWatch aggregation.</li>
-              <li>Add journal, tasks, and schedule persistence.</li>
-              <li>Add AI summary and planning providers.</li>
+              <li>Persist daily activity snapshots in SQLite.</li>
+              <li>Add journal, tasks, and schedule editing.</li>
+              <li>Use AI to classify learning topics.</li>
             </ul>
           </Panel>
         </section>
@@ -148,6 +183,73 @@ function renderView(view: ViewId) {
     case "settings":
       return <Placeholder title="Settings" body="ActivityWatch and AI provider settings will be wired through the local API." />;
   }
+}
+
+function StatusNote({
+  activity,
+  error,
+}: {
+  activity: TodayActivityResponse | null;
+  error: string | null;
+}) {
+  if (error) {
+    return <p className="status-note warning">{error}</p>;
+  }
+
+  if (!activity) {
+    return <p className="status-note">Loading ActivityWatch data...</p>;
+  }
+
+  return (
+    <p className={activity.available ? "status-note" : "status-note warning"}>
+      {activity.message}
+    </p>
+  );
+}
+
+function ActivityList({ entries, totalSeconds }: { entries: ActivityEntry[]; totalSeconds: number }) {
+  if (entries.length === 0) {
+    return <p className="empty-state">No activity data for this list yet.</p>;
+  }
+
+  return (
+    <ol className="activity-list">
+      {entries.map((entry) => {
+        const width = totalSeconds > 0 ? Math.max((entry.seconds / totalSeconds) * 100, 3) : 0;
+        return (
+          <li key={`${entry.name}-${entry.seconds}`}>
+            <div className="activity-row">
+              <span title={entry.name}>{entry.name}</span>
+              <strong>{formatDuration(entry.seconds)}</strong>
+            </div>
+            <div className="activity-bar" aria-hidden="true">
+              <span style={{ width: `${width}%` }} />
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds <= 0) {
+    return "0m";
+  }
+
+  const totalMinutes = Math.round(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours === 0) {
+    return `${minutes}m`;
+  }
+
+  if (minutes === 0) {
+    return `${hours}h`;
+  }
+
+  return `${hours}h ${minutes}m`;
 }
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {

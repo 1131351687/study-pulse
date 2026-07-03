@@ -198,6 +198,63 @@ button {
   color: #3f5149;
 }
 
+.status-note {
+  margin: 16px 0 0;
+  color: #4d675b;
+  line-height: 1.5;
+}
+
+.status-note.warning {
+  color: #9a3f22;
+}
+
+.activity-list {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 7px;
+}
+
+.activity-row span {
+  overflow: hidden;
+  color: #30463d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-row strong {
+  color: #18332b;
+  font-size: 0.88rem;
+}
+
+.activity-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e9e4d6;
+}
+
+.activity-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #3f7f67;
+}
+
+.empty-state {
+  margin: 0;
+  color: #66746d;
+}
+
 .placeholder-panel p {
   max-width: 680px;
   margin: 0;
