@@ -1,17 +1,33 @@
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   BookOpen,
   CalendarDays,
   CheckSquare,
   LayoutDashboard,
+  Plus,
+  Save,
   Settings,
+  Trash2,
 } from "lucide-react";
 
 import {
+  createScheduleBlock,
+  createTask,
+  deleteScheduleBlock,
+  deleteTask,
   fetchHealth,
+  fetchJournal,
+  fetchSchedule,
+  fetchTasks,
   fetchTodayActivity,
+  saveJournal,
+  updateTask,
   type ActivityEntry,
   type HealthResponse,
+  type PlannedFor,
+  type Priority,
+  type ScheduleBlock,
+  type Task,
   type TodayActivityResponse,
 } from "./api/client";
 
@@ -30,6 +46,8 @@ const navItems: NavItem[] = [
   { id: "schedule", label: "Schedule", icon: CalendarDays },
   { id: "settings", label: "Settings", icon: Settings },
 ];
+
+const todayIso = new Date().toISOString().slice(0, 10);
 
 export function App() {
   const [activeView, setActiveView] = useState<ViewId>("today");
@@ -100,7 +118,7 @@ export function App() {
       <main className="main-panel">
         <header className="topbar">
           <div>
-            <p className="eyebrow">v0.1 skeleton</p>
+            <p className="eyebrow">v0.3 local workspace</p>
             <h2>{viewTitle(activeView)}</h2>
           </div>
           <HealthBadge health={health} error={healthError} />
@@ -175,14 +193,276 @@ function renderView(
         </section>
       );
     case "journal":
-      return <Placeholder title="Daily journal" body="A date-based learning journal editor will land in v0.3." />;
+      return <JournalView />;
     case "tasks":
-      return <Placeholder title="Task list" body="Simple task creation, completion, and planning buckets will land in v0.3." />;
+      return <TasksView />;
     case "schedule":
-      return <Placeholder title="Daily schedule" body="Editable time blocks and AI suggestions will land after the local data model is ready." />;
+      return <ScheduleView />;
     case "settings":
       return <Placeholder title="Settings" body="ActivityWatch and AI provider settings will be wired through the local API." />;
   }
+}
+
+function JournalView() {
+  const [date, setDate] = useState(todayIso);
+  const [content, setContent] = useState("");
+  const [status, setStatus] = useState("Loading journal...");
+
+  useEffect(() => {
+    fetchJournal(date)
+      .then((journal) => {
+        setContent(journal.content);
+        setStatus(journal.updatedAt ? `Last saved ${journal.updatedAt}` : "No journal saved for this date.");
+      })
+      .catch((error: unknown) => {
+        setStatus(error instanceof Error ? error.message : "Could not load journal.");
+      });
+  }, [date]);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setStatus("Saving...");
+    saveJournal(date, content)
+      .then((journal) => setStatus(`Saved ${journal.updatedAt}`))
+      .catch((error: unknown) => {
+        setStatus(error instanceof Error ? error.message : "Could not save journal.");
+      });
+  }
+
+  return (
+    <section className="single-column">
+      <Panel title="Daily journal">
+        <form className="stack-form" onSubmit={handleSubmit}>
+          <label>
+            Date
+            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+          </label>
+          <label>
+            Notes
+            <textarea
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              placeholder="Write what you learned, what got stuck, and what you want to continue tomorrow."
+              rows={12}
+            />
+          </label>
+          <div className="form-actions">
+            <button className="primary-button" type="submit">
+              <Save aria-hidden="true" size={16} />
+              Save journal
+            </button>
+            <span>{status}</span>
+          </div>
+        </form>
+      </Panel>
+    </section>
+  );
+}
+
+function TasksView() {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [title, setTitle] = useState("");
+  const [plannedFor, setPlannedFor] = useState<PlannedFor>("today");
+  const [priority, setPriority] = useState<Priority>("normal");
+  const [area, setArea] = useState("");
+  const [status, setStatus] = useState("Loading tasks...");
+
+  function reloadTasks() {
+    fetchTasks()
+      .then((items) => {
+        setTasks(items);
+        setStatus(items.length ? `${items.length} task(s)` : "No tasks yet.");
+      })
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Could not load tasks."));
+  }
+
+  useEffect(() => {
+    reloadTasks();
+  }, []);
+
+  function handleCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!title.trim()) {
+      setStatus("Task title is required.");
+      return;
+    }
+    createTask({ title, plannedFor, priority, area })
+      .then(() => {
+        setTitle("");
+        setArea("");
+        reloadTasks();
+      })
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Could not create task."));
+  }
+
+  function handleToggle(task: Task) {
+    updateTask(task.id, { completed: !task.completed })
+      .then(reloadTasks)
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Could not update task."));
+  }
+
+  function handleDelete(id: number) {
+    deleteTask(id)
+      .then(reloadTasks)
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Could not delete task."));
+  }
+
+  return (
+    <section className="content-grid task-layout">
+      <Panel title="Add task">
+        <form className="stack-form" onSubmit={handleCreate}>
+          <label>
+            Task
+            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Read attention code" />
+          </label>
+          <label>
+            Area
+            <input value={area} onChange={(event) => setArea(event.target.value)} placeholder="AI learning" />
+          </label>
+          <div className="form-grid">
+            <label>
+              Plan
+              <select value={plannedFor} onChange={(event) => setPlannedFor(event.target.value as PlannedFor)}>
+                <option value="today">Today</option>
+                <option value="tomorrow">Tomorrow</option>
+                <option value="week">This week</option>
+              </select>
+            </label>
+            <label>
+              Priority
+              <select value={priority} onChange={(event) => setPriority(event.target.value as Priority)}>
+                <option value="low">Low</option>
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+          </div>
+          <button className="primary-button" type="submit">
+            <Plus aria-hidden="true" size={16} />
+            Add task
+          </button>
+          <p className="form-status">{status}</p>
+        </form>
+      </Panel>
+
+      <Panel title="Task list">
+        {tasks.length === 0 ? (
+          <p className="empty-state">No tasks yet.</p>
+        ) : (
+          <ul className="item-list">
+            {tasks.map((task) => (
+              <li key={task.id} className={task.completed ? "item-row done" : "item-row"}>
+                <label className="check-label">
+                  <input type="checkbox" checked={task.completed} onChange={() => handleToggle(task)} />
+                  <span>{task.title}</span>
+                </label>
+                <small>
+                  {task.plannedFor} / {task.priority}{task.area ? ` / ${task.area}` : ""}
+                </small>
+                <button className="icon-button" onClick={() => handleDelete(task.id)} type="button" title="Delete task">
+                  <Trash2 aria-hidden="true" size={16} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+    </section>
+  );
+}
+
+function ScheduleView() {
+  const [date, setDate] = useState(todayIso);
+  const [blocks, setBlocks] = useState<ScheduleBlock[]>([]);
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("10:00");
+  const [title, setTitle] = useState("");
+  const [status, setStatus] = useState("Loading schedule...");
+
+  function reloadSchedule(targetDate = date) {
+    fetchSchedule(targetDate)
+      .then((items) => {
+        setBlocks(items);
+        setStatus(items.length ? `${items.length} block(s)` : "No schedule blocks for this date.");
+      })
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Could not load schedule."));
+  }
+
+  useEffect(() => {
+    reloadSchedule(date);
+  }, [date]);
+
+  function handleCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!title.trim()) {
+      setStatus("Schedule title is required.");
+      return;
+    }
+    createScheduleBlock({ date, startTime, endTime, title })
+      .then(() => {
+        setTitle("");
+        reloadSchedule();
+      })
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Could not create block."));
+  }
+
+  function handleDelete(id: number) {
+    deleteScheduleBlock(id)
+      .then(() => reloadSchedule())
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Could not delete block."));
+  }
+
+  return (
+    <section className="content-grid task-layout">
+      <Panel title="Add schedule block">
+        <form className="stack-form" onSubmit={handleCreate}>
+          <label>
+            Date
+            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+          </label>
+          <div className="form-grid">
+            <label>
+              Start
+              <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+            </label>
+            <label>
+              End
+              <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} />
+            </label>
+          </div>
+          <label>
+            Block title
+            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Study attention" />
+          </label>
+          <button className="primary-button" type="submit">
+            <Plus aria-hidden="true" size={16} />
+            Add block
+          </button>
+          <p className="form-status">{status}</p>
+        </form>
+      </Panel>
+
+      <Panel title="Schedule blocks">
+        {blocks.length === 0 ? (
+          <p className="empty-state">No schedule blocks for this date.</p>
+        ) : (
+          <ul className="item-list">
+            {blocks.map((block) => (
+              <li key={block.id} className="item-row schedule-row">
+                <strong>
+                  {block.startTime}-{block.endTime}
+                </strong>
+                <span>{block.title}</span>
+                <button className="icon-button" onClick={() => handleDelete(block.id)} type="button" title="Delete block">
+                  <Trash2 aria-hidden="true" size={16} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+    </section>
+  );
 }
 
 function StatusNote({
@@ -252,7 +532,7 @@ function formatDuration(seconds: number): string {
   return `${hours}h ${minutes}m`;
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="panel">
       <h3>{title}</h3>

@@ -22,6 +22,30 @@ button {
   font: inherit;
 }
 
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid #cfc8b8;
+  border-radius: 8px;
+  background: #fffefa;
+  color: #17201b;
+  font: inherit;
+}
+
+input,
+select {
+  min-height: 40px;
+  padding: 0 10px;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 220px;
+  padding: 12px;
+  line-height: 1.55;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
@@ -150,6 +174,15 @@ button {
   gap: 16px;
 }
 
+.single-column {
+  display: grid;
+  max-width: 980px;
+}
+
+.task-layout {
+  align-items: start;
+}
+
 .panel {
   min-height: 220px;
   padding: 20px;
@@ -255,6 +288,142 @@ button {
   color: #66746d;
 }
 
+.stack-form {
+  display: grid;
+  gap: 14px;
+}
+
+.stack-form label,
+.form-grid label {
+  display: grid;
+  gap: 7px;
+  color: #4d5d55;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  color: #66746d;
+  font-size: 0.9rem;
+}
+
+.form-status {
+  margin: 0;
+  color: #66746d;
+}
+
+.primary-button,
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.primary-button {
+  min-height: 40px;
+  padding: 0 14px;
+  background: #1f6f56;
+  color: #fffdf8;
+  font-weight: 800;
+}
+
+.primary-button:hover {
+  background: #185c47;
+}
+
+.icon-button {
+  width: 34px;
+  height: 34px;
+  background: #f1e8df;
+  color: #8a3a25;
+}
+
+.icon-button:hover {
+  background: #ead8cc;
+}
+
+.item-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e3ddcf;
+  border-radius: 8px;
+  background: #fbf8ef;
+}
+
+.item-row small {
+  grid-column: 1 / 2;
+  color: #69766f;
+}
+
+.item-row .icon-button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.item-row.done .check-label span {
+  color: #76837c;
+  text-decoration: line-through;
+}
+
+.check-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.check-label input {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+}
+
+.check-label span,
+.schedule-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.schedule-row strong {
+  color: #1d4f40;
+  font-size: 0.9rem;
+}
+
+.schedule-row .icon-button {
+  grid-column: auto;
+  grid-row: auto;
+}
+
 .placeholder-panel p {
   max-width: 680px;
   margin: 0;
@@ -288,7 +457,8 @@ button {
   }
 
   .content-grid,
-  .metric-grid {
+  .metric-grid,
+  .form-grid {
     grid-template-columns: 1fr;
   }
 }

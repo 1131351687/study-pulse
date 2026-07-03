@@ -2,11 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routes import activity, health, settings
+from app.db import init_db
+from app.routes import activity, health, journal, schedule, settings, tasks
 
 
 def create_app() -> FastAPI:
     app_settings = get_settings()
+    init_db()
     app = FastAPI(title=app_settings.app_name, version=app_settings.version)
 
     app.add_middleware(
@@ -19,6 +21,9 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router, prefix="/api")
     app.include_router(activity.router, prefix="/api")
+    app.include_router(journal.router, prefix="/api")
+    app.include_router(tasks.router, prefix="/api")
+    app.include_router(schedule.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
     return app
 

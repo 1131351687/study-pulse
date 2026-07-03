@@ -2,11 +2,11 @@
 
 StudyPulse is a local-first learning workspace. It is designed to combine computer usage data from ActivityWatch, a daily learning journal, lightweight tasks, schedule blocks, and configurable AI providers to produce daily and weekly learning plans.
 
-The project is currently at `v0.1`: a local runnable skeleton with a FastAPI backend and React/Vite frontend.
+The project is currently at `v0.3`: a local workspace with ActivityWatch aggregation, SQLite persistence, journals, tasks, and schedule blocks.
 
 ## Current Scope
 
-Implemented in this skeleton:
+Implemented so far:
 
 - Local FastAPI API app.
 - Health endpoint at `GET /api/health`.
@@ -14,14 +14,17 @@ Implemented in this skeleton:
 - React/Vite frontend app shell.
 - Navigation placeholders for Today, Journal, Tasks, Schedule, and Settings.
 - Frontend health badge that checks whether the backend is online.
+- ActivityWatch today aggregation at `GET /api/activity/today`.
+- SQLite database stored at `data/study-pulse.sqlite` by default.
+- Daily journal save/load.
+- Task create, complete, and delete.
+- Schedule block create and delete.
 
 Not implemented yet:
 
-- ActivityWatch aggregation.
-- SQLite persistence.
-- Journal, task, and schedule CRUD.
 - AI provider calls.
 - Daily or weekly plan generation.
+- Advanced editing, filtering, and calendar sync.
 
 ## Requirements
 
@@ -77,6 +80,14 @@ The backend defaults to:
 ```text
 http://127.0.0.1:7788
 ```
+
+Local user data is stored in:
+
+```text
+data/study-pulse.sqlite
+```
+
+The `data/` directory is ignored by git.
 
 ## Useful Checks
 
