@@ -1006,8 +1006,8 @@ function AIConfigView({ language }: { language: Language }) {
     fetchAIConfig()
       .then((config) => {
         setProvider(config.provider);
-        setEndpoint(config.endpoint);
-        setModel(config.model);
+        setEndpoint(config.endpoint || defaultEndpointForProvider(config.provider));
+        setModel(config.model || defaultModelForProvider(config.provider));
         setSendActivityTitles(config.sendActivityTitles);
         setHasApiKey(config.hasApiKey);
         setApiKey("");
@@ -1024,6 +1024,12 @@ function AIConfigView({ language }: { language: Language }) {
       apiKey: apiKey.trim() ? apiKey : undefined,
       sendActivityTitles,
     };
+  }
+
+  function handleProviderChange(nextProvider: AIProviderName) {
+    setProvider(nextProvider);
+    setEndpoint(defaultEndpointForProvider(nextProvider));
+    setModel(defaultModelForProvider(nextProvider));
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1053,20 +1059,21 @@ function AIConfigView({ language }: { language: Language }) {
         <form className="stack-form" onSubmit={handleSubmit}>
           <label>
             {t("aiConfig.provider", language)}
-            <select value={provider} onChange={(event) => setProvider(event.target.value as AIProviderName)}>
+            <select value={provider} onChange={(event) => handleProviderChange(event.target.value as AIProviderName)}>
               <option value="mock">mock</option>
               <option value="openai">openai</option>
+              <option value="deepseek">deepseek</option>
               <option value="ollama">ollama</option>
             </select>
           </label>
           <div className="form-grid">
             <label>
               {t("aiConfig.endpoint", language)}
-              <input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} placeholder="https://api.openai.com/v1" />
+              <input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} placeholder={defaultEndpointForProvider(provider)} />
             </label>
             <label>
               {t("aiConfig.model", language)}
-              <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="gpt-4.1-mini" />
+              <input value={model} onChange={(event) => setModel(event.target.value)} placeholder={defaultModelForProvider(provider)} />
             </label>
           </div>
           <label>
@@ -1343,6 +1350,32 @@ function localDateString(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function defaultEndpointForProvider(provider: AIProviderName): string {
+  switch (provider) {
+    case "openai":
+      return "https://api.openai.com/v1";
+    case "deepseek":
+      return "https://api.deepseek.com/v1";
+    case "ollama":
+      return "http://localhost:11434";
+    default:
+      return "";
+  }
+}
+
+function defaultModelForProvider(provider: AIProviderName): string {
+  switch (provider) {
+    case "openai":
+      return "gpt-4.1-mini";
+    case "deepseek":
+      return "deepseek-chat";
+    case "ollama":
+      return "llama3.1";
+    default:
+      return "";
+  }
 }
 
 function readStoredLanguage(): Language {

@@ -58,7 +58,7 @@ export type PublicSettings = {
   port: number;
 };
 
-export type AIProviderName = "mock" | "openai" | "ollama";
+export type AIProviderName = "mock" | "openai" | "deepseek" | "ollama";
 
 export type AIConfig = {
   provider: AIProviderName;

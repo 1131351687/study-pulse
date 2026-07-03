@@ -42,15 +42,17 @@ def read_config() -> dict[str, Any]:
 def update_config(payload: AIConfigRequest) -> dict[str, Any]:
     current = read_ai_config()
     provider = payload.provider.strip().lower()
-    if provider not in {"mock", "openai", "ollama"}:
-        raise HTTPException(status_code=400, detail="Provider must be mock, openai, or ollama.")
+    if provider not in {"mock", "openai", "deepseek", "ollama"}:
+        raise HTTPException(status_code=400, detail="Provider must be mock, openai, deepseek, or ollama.")
 
     api_key = current.api_key if payload.apiKey is None else payload.apiKey.strip()
+    endpoint = _default_endpoint(provider, payload.endpoint.strip())
+    model = _default_model(provider, payload.model.strip())
     config = save_ai_config(
         AIConfig(
             provider=provider,
-            endpoint=payload.endpoint.strip(),
-            model=payload.model.strip(),
+            endpoint=endpoint,
+            model=model,
             api_key=api_key,
             send_activity_titles=payload.sendActivityTitles,
         )
@@ -71,12 +73,12 @@ def test_config(payload: AIConfigRequest | None = None) -> dict[str, Any]:
         config = current
     else:
         provider = payload.provider.strip().lower()
-        if provider not in {"mock", "openai", "ollama"}:
-            raise HTTPException(status_code=400, detail="Provider must be mock, openai, or ollama.")
+        if provider not in {"mock", "openai", "deepseek", "ollama"}:
+            raise HTTPException(status_code=400, detail="Provider must be mock, openai, deepseek, or ollama.")
         config = AIConfig(
             provider=provider,
-            endpoint=payload.endpoint.strip(),
-            model=payload.model.strip(),
+            endpoint=_default_endpoint(provider, payload.endpoint.strip()),
+            model=_default_model(provider, payload.model.strip()),
             api_key=current.api_key if payload.apiKey is None else payload.apiKey.strip(),
             send_activity_titles=payload.sendActivityTitles,
         )
@@ -134,3 +136,27 @@ def _save_generated_plan(target_date: str, provider: str, result: dict[str, Any]
             """,
             (target_date, provider, json.dumps(result, ensure_ascii=False)),
         )
+
+
+def _default_endpoint(provider: str, endpoint: str) -> str:
+    if endpoint:
+        return endpoint
+    if provider == "openai":
+        return "https://api.openai.com/v1"
+    if provider == "deepseek":
+        return "https://api.deepseek.com/v1"
+    if provider == "ollama":
+        return "http://localhost:11434"
+    return ""
+
+
+def _default_model(provider: str, model: str) -> str:
+    if model:
+        return model
+    if provider == "openai":
+        return "gpt-4.1-mini"
+    if provider == "deepseek":
+        return "deepseek-chat"
+    if provider == "ollama":
+        return "llama3.1"
+    return ""

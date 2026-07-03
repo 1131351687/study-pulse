@@ -82,10 +82,17 @@ class OllamaProvider:
         return _normalize_plan(_parse_json_content(content))
 
 
+class DeepSeekProvider(OpenAICompatibleProvider):
+    def __init__(self, endpoint: str, model: str, api_key: str) -> None:
+        super().__init__(endpoint or "https://api.deepseek.com/v1", model or "deepseek-chat", api_key)
+
+
 def create_provider(provider: str, endpoint: str, model: str, api_key: str) -> AIProvider:
     match provider.lower():
         case "openai":
             return OpenAICompatibleProvider(endpoint, model, api_key)
+        case "deepseek":
+            return DeepSeekProvider(endpoint, model, api_key)
         case "ollama":
             return OllamaProvider(endpoint, model)
         case _:
@@ -101,6 +108,13 @@ def test_provider_connection(provider: str, endpoint: str, model: str, api_key: 
                     return {"ok": False, "provider": provider_name, "message": "API key is required for OpenAI-compatible providers."}
                 selected_endpoint = endpoint.rstrip("/") or "https://api.openai.com/v1"
                 selected_model = model or "gpt-4.1-mini"
+                success_message = "OpenAI-compatible chat request succeeded."
+            case "deepseek":
+                if not api_key:
+                    return {"ok": False, "provider": provider_name, "message": "API key is required for DeepSeek."}
+                selected_endpoint = endpoint.rstrip("/") or "https://api.deepseek.com/v1"
+                selected_model = model or "deepseek-chat"
+                success_message = "DeepSeek chat request succeeded."
                 _post_json(
                     f"{selected_endpoint}/chat/completions",
                     {
@@ -112,7 +126,7 @@ def test_provider_connection(provider: str, endpoint: str, model: str, api_key: 
                     {"Authorization": f"Bearer {api_key}"},
                     timeout_seconds=20,
                 )
-                return {"ok": True, "provider": provider_name, "message": "OpenAI-compatible chat request succeeded."}
+                return {"ok": True, "provider": provider_name, "message": success_message}
             case "ollama":
                 selected_endpoint = endpoint.rstrip("/") or "http://localhost:11434"
                 selected_model = model or "llama3.1"
