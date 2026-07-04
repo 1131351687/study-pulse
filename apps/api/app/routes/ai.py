@@ -389,25 +389,25 @@ def _normalize_summary(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "score": _bounded_score(payload.get("score")),
         "summary": str(payload.get("summary") or "").strip(),
-        "strengths": _string_list(payload.get("strengths")),
-        "blockers": _string_list(payload.get("blockers")),
-        "improvements": _string_list(payload.get("improvements")),
+        "strengths": _string_list(_as_list(payload.get("strengths"))),
+        "blockers": _string_list(_as_list(payload.get("blockers"))),
+        "improvements": _string_list(_as_list(payload.get("improvements"))),
     }
 
 
 def _normalize_goal_plan(payload: dict[str, Any]) -> dict[str, Any]:
-    tasks = payload.get("suggestedTasks") if isinstance(payload.get("suggestedTasks"), list) else []
+    tasks = _as_list(payload.get("suggestedTasks"))
     return {
-        "todayPlan": _string_list(payload.get("todayPlan")),
-        "weekPlan": _string_list(payload.get("weekPlan")),
+        "todayPlan": _string_list(_as_list(payload.get("todayPlan"))),
+        "weekPlan": _string_list(_as_list(payload.get("weekPlan"))),
         "suggestedTasks": [
             {
                 "title": str(task.get("title") or "").strip(),
                 "reason": str(task.get("reason") or "").strip(),
                 "plannedFor": str(task.get("plannedFor") or "today").strip(),
             }
-            for task in tasks
-            if isinstance(task, dict) and str(task.get("title") or "").strip()
+            for task in (_coerce_task(task) for task in tasks)
+            if str(task.get("title") or "").strip()
         ],
     }
 
@@ -416,6 +416,25 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _as_list(value: Any) -> list[Any]:
+    """Coerce scalars and dicts into list form so normalizers stay tolerant."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        return [stripped] if stripped else []
+    return [value]
+
+
+def _coerce_task(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    title = str(value).strip() if value is not None else ""
+    return {"title": title, "reason": "", "plannedFor": "today"}
 
 
 def _bounded_score(value: Any) -> int:
