@@ -62,6 +62,48 @@ def init_db() -> None:
                 send_activity_titles INTEGER NOT NULL DEFAULT 1,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS learning_goals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                current_focus TEXT NOT NULL DEFAULT '',
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS ai_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                score INTEGER NOT NULL DEFAULT 0,
+                content_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS ai_plans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                date TEXT NOT NULL,
+                goal_id INTEGER NOT NULL,
+                provider TEXT NOT NULL,
+                content_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(goal_id) REFERENCES learning_goals(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS ai_plan_suggested_tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plan_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                planned_for TEXT NOT NULL DEFAULT 'today',
+                accepted INTEGER NOT NULL DEFAULT 0,
+                accepted_task_id INTEGER,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(plan_id) REFERENCES ai_plans(id),
+                FOREIGN KEY(accepted_task_id) REFERENCES tasks(id)
+            );
             """
         )
 

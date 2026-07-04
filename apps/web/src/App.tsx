@@ -1,10 +1,10 @@
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bot,
   BookOpen,
   CalendarDays,
   CheckSquare,
-  History as HistoryIcon,
+  ClipboardList,
   Languages,
   LayoutDashboard,
   Plus,
@@ -13,364 +13,104 @@ import {
   Settings,
   Sparkles,
   SquarePower,
+  Target,
   Trash2,
 } from "lucide-react";
 
 import {
+  acceptPlannedTask,
+  createGoal,
   createScheduleBlock,
   createTask,
+  deleteGoal,
   deleteScheduleBlock,
   deleteTask,
   fetchAIConfig,
-  fetchDailyPlan,
+  fetchAIPlans,
+  fetchAISummaries,
+  fetchDayRecord,
+  fetchGoals,
   fetchHealth,
-  fetchHistoryDays,
   fetchJournal,
   fetchRuntimeStatus,
-  fetchSchedule,
   fetchSettings,
   fetchTasks,
   fetchTodayActivity,
-  generateDailyPlan,
+  generateAISummary,
+  generateAIPlan,
   saveAIConfig,
   saveJournal,
   stopRuntime,
   testAIConfig,
+  updateGoal,
   updateTask,
   type ActivityEntry,
+  type AIConfig,
+  type AIPlanRecord,
   type AIProviderName,
-  type DailyPlanResponse,
-  type DailyPlanResult,
+  type AISummaryRecord,
+  type DayRecord,
   type HealthResponse,
-  type HistoryDay,
+  type Journal,
+  type LearningGoal,
   type PlannedFor,
   type Priority,
   type PublicSettings,
   type RuntimeStatus,
   type ScheduleBlock,
-  type SuggestedScheduleBlock,
-  type SuggestedTask,
   type Task,
   type TodayActivityResponse,
 } from "./api/client";
 
 type Language = "zh" | "en";
-type ViewId = "today" | "history" | "journal" | "tasks" | "schedule" | "aiPlan" | "aiConfig" | "settings";
-type I18nKey = keyof typeof translations.en;
+type ViewId =
+  | "today"
+  | "schedule"
+  | "tasks"
+  | "goals"
+  | "aiSummary"
+  | "aiPlanning"
+  | "journal"
+  | "aiConfig"
+  | "settings";
 
 type NavItem = {
   id: ViewId;
-  labelKey: I18nKey;
+  zh: string;
+  en: string;
   icon: typeof LayoutDashboard;
 };
 
 const navItems: NavItem[] = [
-  { id: "today", labelKey: "nav.today", icon: LayoutDashboard },
-  { id: "history", labelKey: "nav.history", icon: HistoryIcon },
-  { id: "journal", labelKey: "nav.journal", icon: BookOpen },
-  { id: "tasks", labelKey: "nav.tasks", icon: CheckSquare },
-  { id: "schedule", labelKey: "nav.schedule", icon: CalendarDays },
-  { id: "aiPlan", labelKey: "nav.aiPlan", icon: Sparkles },
-  { id: "aiConfig", labelKey: "nav.aiConfig", icon: Bot },
-  { id: "settings", labelKey: "nav.settings", icon: Settings },
+  { id: "today", zh: "今日", en: "Today", icon: LayoutDashboard },
+  { id: "schedule", zh: "日程", en: "Schedule", icon: CalendarDays },
+  { id: "tasks", zh: "任务", en: "Tasks", icon: CheckSquare },
+  { id: "goals", zh: "学习目标", en: "Goals", icon: Target },
+  { id: "aiSummary", zh: "AI 总结", en: "AI Summary", icon: Sparkles },
+  { id: "aiPlanning", zh: "AI 规划", en: "AI Planning", icon: ClipboardList },
+  { id: "journal", zh: "日志", en: "Journal", icon: BookOpen },
+  { id: "aiConfig", zh: "AI 配置", en: "AI Config", icon: Bot },
+  { id: "settings", zh: "设置", en: "Settings", icon: Settings },
 ];
 
-const todayIso = localDateString(new Date());
 const languageStorageKey = "study-pulse-language";
-
-const translations = {
-  zh: {
-    "brand.subtitle": "本地学习工作台",
-    "language.label": "界面语言",
-    "api.online": "API 在线",
-    "api.offline": "API 离线",
-    "nav.today": "今日",
-    "nav.history": "历史",
-    "nav.journal": "日志",
-    "nav.tasks": "任务",
-    "nav.schedule": "日程",
-    "nav.aiPlan": "AI 计划",
-    "nav.aiConfig": "AI 配置",
-    "nav.settings": "设置",
-    "today.overview": "今日概览",
-    "today.trackedTime": "记录时长",
-    "today.learningTime": "学习时长",
-    "today.activityBuckets": "活动桶",
-    "today.topApps": "常用应用",
-    "today.topTitles": "常见标题",
-    "today.backendHint": "后端状态和退出控制在“设置”页面。",
-    "activity.loading": "正在读取 ActivityWatch 数据...",
-    "activity.empty": "这组数据暂时为空。",
-    "field.date": "日期",
-    "field.days": "天数",
-    "journal.title": "每日学习日志",
-    "journal.loading": "正在读取日志...",
-    "journal.lastSaved": "上次保存",
-    "journal.none": "这一天还没有日志。",
-    "journal.loadError": "无法读取日志。",
-    "journal.saving": "正在保存...",
-    "journal.saved": "已保存",
-    "journal.saveError": "无法保存日志。",
-    "journal.notes": "内容",
-    "journal.placeholder": "写下今天学了什么、哪里卡住、明天想继续什么。",
-    "journal.save": "保存日志",
-    "tasks.loading": "正在读取任务...",
-    "tasks.count": "个任务",
-    "tasks.none": "还没有任务。",
-    "tasks.loadError": "无法读取任务。",
-    "tasks.titleRequired": "任务标题不能为空。",
-    "tasks.createError": "无法创建任务。",
-    "tasks.updateError": "无法更新任务。",
-    "tasks.deleteError": "无法删除任务。",
-    "tasks.add": "添加任务",
-    "tasks.task": "任务",
-    "tasks.placeholder": "阅读 attention 代码",
-    "tasks.area": "领域",
-    "tasks.areaPlaceholder": "AI 学习",
-    "tasks.plan": "计划",
-    "tasks.today": "今天",
-    "tasks.tomorrow": "明天",
-    "tasks.week": "本周",
-    "tasks.priority": "优先级",
-    "tasks.low": "低",
-    "tasks.normal": "普通",
-    "tasks.high": "高",
-    "tasks.addButton": "添加任务",
-    "tasks.list": "任务列表",
-    "tasks.delete": "删除任务",
-    "schedule.loading": "正在读取日程...",
-    "schedule.count": "个时间块",
-    "schedule.noneForDate": "这一天还没有日程块。",
-    "schedule.loadError": "无法读取日程。",
-    "schedule.titleRequired": "日程标题不能为空。",
-    "schedule.createError": "无法创建日程块。",
-    "schedule.deleteError": "无法删除日程块。",
-    "schedule.add": "添加日程块",
-    "schedule.start": "开始",
-    "schedule.end": "结束",
-    "schedule.blockTitle": "标题",
-    "schedule.placeholder": "学习 attention",
-    "schedule.addButton": "添加日程",
-    "schedule.blocks": "日程块",
-    "schedule.delete": "删除日程块",
-    "history.title": "历史进展",
-    "history.loading": "正在读取历史记录...",
-    "history.loadError": "无法读取历史记录。",
-    "history.empty": "暂无历史数据。",
-    "history.reload": "刷新历史",
-    "history.journal": "日志",
-    "history.schedule": "日程",
-    "history.plan": "AI 计划",
-    "history.noPlan": "无 AI 计划",
-    "history.activityUnavailable": "无 ActivityWatch 记录",
-    "aiPlan.title": "AI 计划",
-    "aiPlan.loading": "正在读取已保存计划...",
-    "aiPlan.saved": "已保存",
-    "aiPlan.none": "还没有生成计划。",
-    "aiPlan.loadError": "无法读取计划。",
-    "aiPlan.generating": "正在生成...",
-    "aiPlan.generatingShort": "生成中",
-    "aiPlan.generate": "生成计划",
-    "aiPlan.generatedWith": "生成模型",
-    "aiPlan.generateError": "无法生成计划。",
-    "aiPlan.empty": "这一天还没有计划。",
-    "aiPlan.timeInsights": "时间洞察",
-    "aiPlan.openLoops": "未完成线索",
-    "aiPlan.suggestedTasks": "建议任务",
-    "aiPlan.tomorrowSchedule": "建议日程",
-    "aiPlan.anytime": "任意时间",
-    "aiConfig.title": "AI 配置",
-    "aiConfig.loading": "正在读取 AI 配置...",
-    "aiConfig.loaded": "AI 配置已读取。",
-    "aiConfig.loadError": "无法读取 AI 配置。",
-    "aiConfig.saving": "正在保存...",
-    "aiConfig.saved": "AI 配置已保存。",
-    "aiConfig.saveError": "无法保存 AI 配置。",
-    "aiConfig.testing": "正在测试连接...",
-    "aiConfig.provider": "Provider",
-    "aiConfig.endpoint": "Endpoint",
-    "aiConfig.model": "Model",
-    "aiConfig.apiKey": "API Key",
-    "aiConfig.apiKeySaved": "已保存，留空则保持不变",
-    "aiConfig.apiKeyPlaceholder": "mock 或 ollama 可留空",
-    "aiConfig.sendTitles": "允许把 ActivityWatch 窗口标题发送给 AI",
-    "aiConfig.save": "保存配置",
-    "aiConfig.test": "测试连接",
-    "aiConfig.testOk": "连接可用",
-    "aiConfig.testFail": "连接失败",
-    "settings.title": "设置",
-    "settings.loading": "正在读取设置...",
-    "settings.loaded": "设置已读取。",
-    "settings.loadError": "无法读取设置。",
-    "runtime.title": "运行状态",
-    "runtime.loading": "正在读取运行状态...",
-    "runtime.loadError": "无法读取运行状态。",
-    "runtime.refresh": "刷新状态",
-    "runtime.stop": "退出运行",
-    "runtime.stopping": "正在停止...",
-    "runtime.stopDone": "停止命令已发送。",
-    "runtime.unmanaged": "当前不是通过启动脚本记录的受管运行。",
-    "runtime.running": "运行中",
-    "runtime.stopped": "未运行",
-    "runtime.backend": "后端",
-    "runtime.frontend": "前端",
-    "runtime.pid": "PID",
-    "runtime.updatedAt": "状态更新时间",
-  },
-  en: {
-    "brand.subtitle": "Local learning workspace",
-    "language.label": "Interface language",
-    "api.online": "API online",
-    "api.offline": "API offline",
-    "nav.today": "Today",
-    "nav.history": "History",
-    "nav.journal": "Journal",
-    "nav.tasks": "Tasks",
-    "nav.schedule": "Schedule",
-    "nav.aiPlan": "AI Plan",
-    "nav.aiConfig": "AI Config",
-    "nav.settings": "Settings",
-    "today.overview": "Today overview",
-    "today.trackedTime": "Tracked time",
-    "today.learningTime": "Learning time",
-    "today.activityBuckets": "Activity buckets",
-    "today.topApps": "Top applications",
-    "today.topTitles": "Top titles",
-    "today.backendHint": "Backend status and stop controls are on the Settings page.",
-    "activity.loading": "Loading ActivityWatch data...",
-    "activity.empty": "No activity data for this list yet.",
-    "field.date": "Date",
-    "field.days": "Days",
-    "journal.title": "Daily journal",
-    "journal.loading": "Loading journal...",
-    "journal.lastSaved": "Last saved",
-    "journal.none": "No journal saved for this date.",
-    "journal.loadError": "Could not load journal.",
-    "journal.saving": "Saving...",
-    "journal.saved": "Saved",
-    "journal.saveError": "Could not save journal.",
-    "journal.notes": "Notes",
-    "journal.placeholder": "Write what you learned, what got stuck, and what you want to continue tomorrow.",
-    "journal.save": "Save journal",
-    "tasks.loading": "Loading tasks...",
-    "tasks.count": "task(s)",
-    "tasks.none": "No tasks yet.",
-    "tasks.loadError": "Could not load tasks.",
-    "tasks.titleRequired": "Task title is required.",
-    "tasks.createError": "Could not create task.",
-    "tasks.updateError": "Could not update task.",
-    "tasks.deleteError": "Could not delete task.",
-    "tasks.add": "Add task",
-    "tasks.task": "Task",
-    "tasks.placeholder": "Read attention code",
-    "tasks.area": "Area",
-    "tasks.areaPlaceholder": "AI learning",
-    "tasks.plan": "Plan",
-    "tasks.today": "Today",
-    "tasks.tomorrow": "Tomorrow",
-    "tasks.week": "This week",
-    "tasks.priority": "Priority",
-    "tasks.low": "Low",
-    "tasks.normal": "Normal",
-    "tasks.high": "High",
-    "tasks.addButton": "Add task",
-    "tasks.list": "Task list",
-    "tasks.delete": "Delete task",
-    "schedule.loading": "Loading schedule...",
-    "schedule.count": "block(s)",
-    "schedule.noneForDate": "No schedule blocks for this date.",
-    "schedule.loadError": "Could not load schedule.",
-    "schedule.titleRequired": "Schedule title is required.",
-    "schedule.createError": "Could not create block.",
-    "schedule.deleteError": "Could not delete block.",
-    "schedule.add": "Add schedule block",
-    "schedule.start": "Start",
-    "schedule.end": "End",
-    "schedule.blockTitle": "Block title",
-    "schedule.placeholder": "Study attention",
-    "schedule.addButton": "Add block",
-    "schedule.blocks": "Schedule blocks",
-    "schedule.delete": "Delete block",
-    "history.title": "History progress",
-    "history.loading": "Loading history...",
-    "history.loadError": "Could not load history.",
-    "history.empty": "No history data yet.",
-    "history.reload": "Refresh history",
-    "history.journal": "Journal",
-    "history.schedule": "Schedule",
-    "history.plan": "AI plan",
-    "history.noPlan": "No AI plan",
-    "history.activityUnavailable": "No ActivityWatch record",
-    "aiPlan.title": "AI plan",
-    "aiPlan.loading": "Loading saved plan...",
-    "aiPlan.saved": "Saved",
-    "aiPlan.none": "No generated plan yet.",
-    "aiPlan.loadError": "Could not load plan.",
-    "aiPlan.generating": "Generating...",
-    "aiPlan.generatingShort": "Generating",
-    "aiPlan.generate": "Generate plan",
-    "aiPlan.generatedWith": "Generated with",
-    "aiPlan.generateError": "Could not generate plan.",
-    "aiPlan.empty": "No plan for this date.",
-    "aiPlan.timeInsights": "Time insights",
-    "aiPlan.openLoops": "Open loops",
-    "aiPlan.suggestedTasks": "Suggested tasks",
-    "aiPlan.tomorrowSchedule": "Suggested schedule",
-    "aiPlan.anytime": "Anytime",
-    "aiConfig.title": "AI config",
-    "aiConfig.loading": "Loading AI config...",
-    "aiConfig.loaded": "AI config loaded.",
-    "aiConfig.loadError": "Could not load AI config.",
-    "aiConfig.saving": "Saving...",
-    "aiConfig.saved": "AI config saved.",
-    "aiConfig.saveError": "Could not save AI config.",
-    "aiConfig.testing": "Testing connection...",
-    "aiConfig.provider": "Provider",
-    "aiConfig.endpoint": "Endpoint",
-    "aiConfig.model": "Model",
-    "aiConfig.apiKey": "API key",
-    "aiConfig.apiKeySaved": "Saved; leave blank to keep it",
-    "aiConfig.apiKeyPlaceholder": "Can be blank for mock or Ollama",
-    "aiConfig.sendTitles": "Send ActivityWatch window titles to AI",
-    "aiConfig.save": "Save config",
-    "aiConfig.test": "Test connection",
-    "aiConfig.testOk": "Connection works",
-    "aiConfig.testFail": "Connection failed",
-    "settings.title": "Settings",
-    "settings.loading": "Loading settings...",
-    "settings.loaded": "Settings loaded.",
-    "settings.loadError": "Could not load settings.",
-    "runtime.title": "Runtime status",
-    "runtime.loading": "Loading runtime status...",
-    "runtime.loadError": "Could not load runtime status.",
-    "runtime.refresh": "Refresh status",
-    "runtime.stop": "Exit running app",
-    "runtime.stopping": "Stopping...",
-    "runtime.stopDone": "Stop command sent.",
-    "runtime.unmanaged": "This run was not recorded by the launcher script.",
-    "runtime.running": "Running",
-    "runtime.stopped": "Stopped",
-    "runtime.backend": "Backend",
-    "runtime.frontend": "Frontend",
-    "runtime.pid": "PID",
-    "runtime.updatedAt": "Status updated",
-  },
-} as const;
+const todayIso = localDateString(new Date());
 
 export function App() {
-  const [activeView, setActiveView] = useState<ViewId>("today");
-  const [language, setLanguage] = useState<Language>(() => readStoredLanguage());
+  const [language, setLanguage] = useState<Language>(() =>
+    localStorage.getItem(languageStorageKey) === "en" ? "en" : "zh",
+  );
+  const [view, setView] = useState<ViewId>("today");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
-  const [activity, setActivity] = useState<TodayActivityResponse | null>(null);
-  const [activityError, setActivityError] = useState<string | null>(null);
 
   useEffect(() => {
+    localStorage.setItem(languageStorageKey, language);
+  }, [language]);
+
+  const refreshHealth = useCallback(() => {
     fetchHealth()
-      .then((result) => {
-        setHealth(result);
-        setHealthError(null);
-      })
+      .then(setHealth)
       .catch((error: unknown) => {
         setHealth(null);
         setHealthError(error instanceof Error ? error.message : "Backend unavailable");
@@ -378,609 +118,451 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    fetchTodayActivity()
-      .then((result) => {
-        setActivity(result);
-        setActivityError(null);
-      })
-      .catch((error: unknown) => {
-        setActivity(null);
-        setActivityError(error instanceof Error ? error.message : "Activity data unavailable");
-      });
-  }, []);
-
-  const content = useMemo(() => renderView(activeView, language, activity, activityError), [
-    activeView,
-    language,
-    activity,
-    activityError,
-  ]);
-
-  function handleLanguageChange(nextLanguage: Language) {
-    setLanguage(nextLanguage);
-    localStorage.setItem(languageStorageKey, nextLanguage);
-  }
+    refreshHealth();
+  }, [refreshHealth]);
 
   return (
     <div className="app-shell">
-      <aside className="sidebar" aria-label="Primary">
+      <aside className="sidebar">
         <div className="brand-block">
           <div className="brand-mark">SP</div>
           <div>
             <h1>StudyPulse</h1>
-            <p>{t("brand.subtitle", language)}</p>
+            <p>{language === "zh" ? "本地学习工作台" : "Local learning studio"}</p>
           </div>
         </div>
 
         <nav className="nav-list">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                className={item.id === activeView ? "nav-item active" : "nav-item"}
-                key={item.id}
-                onClick={() => setActiveView(item.id)}
-                type="button"
-              >
-                <Icon aria-hidden="true" size={18} />
-                <span>{t(item.labelKey, language)}</span>
-              </button>
-            );
-          })}
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              className={`nav-item${view === item.id ? " active" : ""}`}
+              onClick={() => setView(item.id)}
+              type="button"
+            >
+              <item.icon aria-hidden="true" size={18} />
+              <span>{language === "zh" ? item.zh : item.en}</span>
+            </button>
+          ))}
         </nav>
+
+        <LanguageToggle language={language} onChange={setLanguage} />
       </aside>
 
       <main className="main-panel">
-        <header className="topbar">
+        <div className="topbar">
           <div>
-            <p className="eyebrow">v0.5 local workspace</p>
-            <h2>{viewTitle(activeView, language)}</h2>
+            <p className="eyebrow">{language === "zh" ? "页面" : "View"}</p>
+            <h2>{navLabel(view, language)}</h2>
           </div>
           <div className="topbar-actions">
-            <LanguageToggle language={language} onChange={handleLanguageChange} />
             <HealthBadge health={health} error={healthError} language={language} />
+            <button className="secondary-button" onClick={refreshHealth} type="button">
+              <RefreshCw aria-hidden="true" size={16} />
+              {language === "zh" ? "刷新状态" : "Refresh"}
+            </button>
           </div>
-        </header>
+        </div>
 
-        {content}
+        {view === "today" && <TodayView language={language} />}
+        {view === "schedule" && <ScheduleView language={language} />}
+        {view === "tasks" && <TasksView language={language} />}
+        {view === "goals" && <GoalsView language={language} />}
+        {view === "aiSummary" && <AISummaryView language={language} />}
+        {view === "aiPlanning" && <AIPlanningView language={language} />}
+        {view === "journal" && <JournalView language={language} />}
+        {view === "aiConfig" && <AIConfigView language={language} />}
+        {view === "settings" && <SettingsView language={language} />}
       </main>
     </div>
   );
 }
 
-function renderView(
-  view: ViewId,
-  language: Language,
-  activity: TodayActivityResponse | null,
-  activityError: string | null,
-) {
-  switch (view) {
-    case "today":
-      return <TodayView language={language} activity={activity} activityError={activityError} />;
-    case "history":
-      return <HistoryView language={language} />;
-    case "journal":
-      return <JournalView language={language} />;
-    case "tasks":
-      return <TasksView language={language} />;
-    case "schedule":
-      return <ScheduleView language={language} />;
-    case "aiPlan":
-      return <AIPlanView language={language} />;
-    case "aiConfig":
-      return <AIConfigView language={language} />;
-    case "settings":
-      return <SettingsView language={language} />;
-  }
-}
+function TodayView({ language }: { language: Language }) {
+  const [activity, setActivity] = useState<TodayActivityResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-function TodayView({
-  language,
-  activity,
-  activityError,
-}: {
-  language: Language;
-  activity: TodayActivityResponse | null;
-  activityError: string | null;
-}) {
-  return (
-    <section className="content-grid">
-      <Panel title={t("today.overview", language)}>
-        <dl className="metric-grid">
-          <div>
-            <dt>{t("today.trackedTime", language)}</dt>
-            <dd>{activity ? formatDuration(activity.totalSeconds) : "--"}</dd>
-          </div>
-          <div>
-            <dt>{t("today.learningTime", language)}</dt>
-            <dd>--</dd>
-          </div>
-          <div>
-            <dt>{t("today.activityBuckets", language)}</dt>
-            <dd>{activity?.bucketCount ?? "--"}</dd>
-          </div>
-        </dl>
-        <StatusNote activity={activity} error={activityError} language={language} />
-      </Panel>
-      <Panel title={t("today.topApps", language)}>
-        <ActivityList entries={activity?.topApps ?? []} totalSeconds={activity?.totalSeconds ?? 0} language={language} />
-      </Panel>
-      <Panel title={t("today.topTitles", language)}>
-        <ActivityList entries={activity?.topTitles ?? []} totalSeconds={activity?.totalSeconds ?? 0} language={language} />
-      </Panel>
-      <Panel title={t("nav.aiPlan", language)}>
-        <p className="summary-text">{t("today.backendHint", language)}</p>
-      </Panel>
-    </section>
-  );
-}
-
-function HistoryView({ language }: { language: Language }) {
-  const [days, setDays] = useState(14);
-  const [items, setItems] = useState<HistoryDay[]>([]);
-  const [status, setStatus] = useState(t("history.loading", language));
-
-  function loadHistory(targetDays = days) {
-    setStatus(t("history.loading", language));
-    fetchHistoryDays(targetDays)
-      .then((result) => {
-        setItems(result);
-        setStatus(result.length ? "" : t("history.empty", language));
-      })
-      .catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : t("history.loadError", language));
-      });
-  }
-
-  useEffect(() => {
-    loadHistory(days);
-  }, [days, language]);
-
-  return (
-    <section className="single-column history-layout">
-      <Panel title={t("history.title", language)}>
-        <div className="panel-toolbar">
-          <label className="inline-field">
-            <span>{t("field.days", language)}</span>
-            <select value={days} onChange={(event) => setDays(Number(event.target.value))}>
-              <option value={7}>7</option>
-              <option value={14}>14</option>
-              <option value={30}>30</option>
-            </select>
-          </label>
-          <button className="secondary-button" onClick={() => loadHistory(days)} type="button">
-            <RefreshCw aria-hidden="true" size={16} />
-            {t("history.reload", language)}
-          </button>
-          <span>{status}</span>
-        </div>
-        {items.length === 0 ? (
-          <p className="empty-state">{status || t("history.empty", language)}</p>
-        ) : (
-          <ul className="history-list">
-            {items.map((item) => (
-              <li key={item.date} className="history-item">
-                <div className="history-header">
-                  <strong>{item.date}</strong>
-                  <span>
-                    {item.activityAvailable ? formatDuration(item.trackedSeconds) : t("history.activityUnavailable", language)}
-                  </span>
-                </div>
-                <div className="history-grid">
-                  <div>
-                    <small>{t("history.journal", language)}</small>
-                    <p>{item.journalPreview || "--"}</p>
-                  </div>
-                  <div>
-                    <small>{t("history.schedule", language)}</small>
-                    <p>
-                      {item.scheduleBlocks.length
-                        ? item.scheduleBlocks.map((block) => `${block.startTime}-${block.endTime} ${block.title}`).join(" | ")
-                        : "--"}
-                    </p>
-                  </div>
-                  <div>
-                    <small>{t("history.plan", language)}</small>
-                    <p>{item.hasPlan ? `${item.planProvider}: ${item.planSummary || "--"}` : t("history.noPlan", language)}</p>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Panel>
-    </section>
-  );
-}
-
-function AIPlanView({ language }: { language: Language }) {
-  const [date, setDate] = useState(todayIso);
-  const [plan, setPlan] = useState<DailyPlanResponse | null>(null);
-  const [status, setStatus] = useState(t("aiPlan.loading", language));
-  const [isGenerating, setIsGenerating] = useState(false);
-
-  useEffect(() => {
-    setStatus(t("aiPlan.loading", language));
-    fetchDailyPlan(date)
-      .then((response) => {
-        setPlan(response.result ? response : null);
-        setStatus(response.result ? `${t("aiPlan.saved", language)} ${response.updatedAt ?? ""}` : t("aiPlan.none", language));
-      })
-      .catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : t("aiPlan.loadError", language));
-      });
-  }, [date, language]);
-
-  function handleGenerate() {
-    setIsGenerating(true);
-    setStatus(t("aiPlan.generating", language));
-    generateDailyPlan(date)
-      .then((response) => {
-        setPlan(response);
-        setStatus(`${t("aiPlan.generatedWith", language)} ${response.provider}`);
-      })
-      .catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : t("aiPlan.generateError", language));
-      })
-      .finally(() => setIsGenerating(false));
-  }
-
-  return (
-    <section className="single-column">
-      <Panel title={t("aiPlan.title", language)}>
-        <div className="panel-toolbar">
-          <label className="inline-field">
-            <span>{t("field.date", language)}</span>
-            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-          </label>
-          <button className="primary-button" onClick={handleGenerate} disabled={isGenerating} type="button">
-            <Sparkles aria-hidden="true" size={16} />
-            {isGenerating ? t("aiPlan.generatingShort", language) : t("aiPlan.generate", language)}
-          </button>
-          <span>{status}</span>
-        </div>
-        {plan?.result ? <DailyPlanContent result={plan.result} language={language} /> : <p className="empty-state">{t("aiPlan.empty", language)}</p>}
-      </Panel>
-    </section>
-  );
-}
-
-function DailyPlanContent({ result, language }: { result: DailyPlanResult; language: Language }) {
-  return (
-    <div className="ai-plan">
-      {result.summary ? <p className="summary-text">{result.summary}</p> : null}
-      <TagList items={result.topics} />
-      <InsightList title={t("aiPlan.timeInsights", language)} items={result.timeInsights} />
-      <InsightList title={t("aiPlan.openLoops", language)} items={result.unfinishedReasons} />
-      <SuggestedTasks tasks={result.suggestedTasks} language={language} />
-      <SuggestedSchedule blocks={result.tomorrowSchedule} language={language} />
-    </div>
-  );
-}
-
-function TagList({ items }: { items: string[] }) {
-  if (items.length === 0) {
-    return null;
-  }
-  return (
-    <div className="tag-list">
-      {items.map((item) => (
-        <span key={item}>{item}</span>
-      ))}
-    </div>
-  );
-}
-
-function InsightList({ title, items }: { title: string; items: string[] }) {
-  if (items.length === 0) {
-    return null;
-  }
-  return (
-    <section className="ai-section">
-      <h4>{title}</h4>
-      <ul className="plain-list compact-list">
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function SuggestedTasks({ tasks, language }: { tasks: SuggestedTask[]; language: Language }) {
-  if (tasks.length === 0) {
-    return null;
-  }
-  return (
-    <section className="ai-section">
-      <h4>{t("aiPlan.suggestedTasks", language)}</h4>
-      <ul className="suggestion-list">
-        {tasks.map((task) => (
-          <li key={`${task.title}-${task.reason}`}>
-            <strong>{task.title}</strong>
-            <span>
-              {task.plannedFor}
-              {task.reason ? ` / ${task.reason}` : ""}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function SuggestedSchedule({ blocks, language }: { blocks: SuggestedScheduleBlock[]; language: Language }) {
-  if (blocks.length === 0) {
-    return null;
-  }
-  return (
-    <section className="ai-section">
-      <h4>{t("aiPlan.tomorrowSchedule", language)}</h4>
-      <ul className="suggestion-list schedule-suggestions">
-        {blocks.map((block) => (
-          <li key={`${block.startTime}-${block.endTime}-${block.title}`}>
-            <strong>{block.startTime && block.endTime ? `${block.startTime}-${block.endTime}` : t("aiPlan.anytime", language)}</strong>
-            <span>{block.title}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function JournalView({ language }: { language: Language }) {
-  const [date, setDate] = useState(todayIso);
-  const [content, setContent] = useState("");
-  const [status, setStatus] = useState(t("journal.loading", language));
-
-  useEffect(() => {
-    setStatus(t("journal.loading", language));
-    fetchJournal(date)
-      .then((journal) => {
-        setContent(journal.content);
-        setStatus(journal.updatedAt ? `${t("journal.lastSaved", language)} ${journal.updatedAt}` : t("journal.none", language));
-      })
-      .catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : t("journal.loadError", language));
-      });
-  }, [date, language]);
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatus(t("journal.saving", language));
-    saveJournal(date, content)
-      .then((journal) => setStatus(`${t("journal.saved", language)} ${journal.updatedAt}`))
-      .catch((error: unknown) => {
-        setStatus(error instanceof Error ? error.message : t("journal.saveError", language));
-      });
-  }
-
-  return (
-    <section className="single-column">
-      <Panel title={t("journal.title", language)}>
-        <form className="stack-form" onSubmit={handleSubmit}>
-          <label>
-            {t("field.date", language)}
-            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-          </label>
-          <label>
-            {t("journal.notes", language)}
-            <textarea
-              value={content}
-              onChange={(event) => setContent(event.target.value)}
-              placeholder={t("journal.placeholder", language)}
-              rows={12}
-            />
-          </label>
-          <div className="form-actions">
-            <button className="primary-button" type="submit">
-              <Save aria-hidden="true" size={16} />
-              {t("journal.save", language)}
-            </button>
-            <span>{status}</span>
-          </div>
-        </form>
-      </Panel>
-    </section>
-  );
-}
-
-function TasksView({ language }: { language: Language }) {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [title, setTitle] = useState("");
-  const [plannedFor, setPlannedFor] = useState<PlannedFor>("today");
-  const [priority, setPriority] = useState<Priority>("normal");
-  const [area, setArea] = useState("");
-  const [status, setStatus] = useState(t("tasks.loading", language));
-
-  function reloadTasks() {
-    fetchTasks()
-      .then((items) => {
-        setTasks(items);
-        setStatus(items.length ? `${items.length} ${t("tasks.count", language)}` : t("tasks.none", language));
-      })
-      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("tasks.loadError", language)));
-  }
-
-  useEffect(() => {
-    reloadTasks();
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchTodayActivity()
+      .then(setActivity)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load activity"))
+      .finally(() => setLoading(false));
   }, []);
 
-  function handleCreate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!title.trim()) {
-      setStatus(t("tasks.titleRequired", language));
-      return;
-    }
-    createTask({ title, plannedFor, priority, area })
-      .then(() => {
-        setTitle("");
-        setArea("");
-        reloadTasks();
-      })
-      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("tasks.createError", language)));
-  }
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  function handleToggle(task: Task) {
-    updateTask(task.id, { completed: !task.completed })
-      .then(reloadTasks)
-      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("tasks.updateError", language)));
-  }
-
-  function handleDelete(id: number) {
-    deleteTask(id)
-      .then(reloadTasks)
-      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("tasks.deleteError", language)));
+  if (loading) {
+    return <p className="status-note">{language === "zh" ? "正在读取 ActivityWatch 数据..." : "Loading ActivityWatch data..."}</p>;
   }
 
   return (
-    <section className="content-grid task-layout">
-      <Panel title={t("tasks.add", language)}>
-        <form className="stack-form" onSubmit={handleCreate}>
-          <label>
-            {t("tasks.task", language)}
-            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={t("tasks.placeholder", language)} />
-          </label>
-          <label>
-            {t("tasks.area", language)}
-            <input value={area} onChange={(event) => setArea(event.target.value)} placeholder={t("tasks.areaPlaceholder", language)} />
-          </label>
-          <div className="form-grid">
-            <label>
-              {t("tasks.plan", language)}
-              <select value={plannedFor} onChange={(event) => setPlannedFor(event.target.value as PlannedFor)}>
-                <option value="today">{t("tasks.today", language)}</option>
-                <option value="tomorrow">{t("tasks.tomorrow", language)}</option>
-                <option value="week">{t("tasks.week", language)}</option>
-              </select>
-            </label>
-            <label>
-              {t("tasks.priority", language)}
-              <select value={priority} onChange={(event) => setPriority(event.target.value as Priority)}>
-                <option value="low">{t("tasks.low", language)}</option>
-                <option value="normal">{t("tasks.normal", language)}</option>
-                <option value="high">{t("tasks.high", language)}</option>
-              </select>
-            </label>
-          </div>
-          <button className="primary-button" type="submit">
-            <Plus aria-hidden="true" size={16} />
-            {t("tasks.addButton", language)}
-          </button>
-          <p className="form-status">{status}</p>
-        </form>
-      </Panel>
-
-      <Panel title={t("tasks.list", language)}>
-        {tasks.length === 0 ? (
-          <p className="empty-state">{t("tasks.none", language)}</p>
+    <div className="content-grid">
+      <Panel title={language === "zh" ? "今日概览" : "Today Overview"}>
+        {error ? (
+          <p className="status-note warning">{error}</p>
+        ) : activity ? (
+          <>
+            <p className={activity.available ? "status-note" : "status-note warning"}>{activity.message}</p>
+            <dl className="metric-grid">
+              <div>
+                <dt>{language === "zh" ? "记录时长" : "Tracked Time"}</dt>
+                <dd>{formatDuration(activity.totalSeconds)}</dd>
+              </div>
+              <div>
+                <dt>{language === "zh" ? "活跃桶数" : "Buckets"}</dt>
+                <dd>{activity.bucketCount}</dd>
+              </div>
+              <div>
+                <dt>{language === "zh" ? "常见标题" : "Top Titles"}</dt>
+                <dd>{activity.topTitles.length}</dd>
+              </div>
+            </dl>
+          </>
         ) : (
-          <ul className="item-list">
-            {tasks.map((task) => (
-              <li key={task.id} className={task.completed ? "item-row done" : "item-row"}>
-                <label className="check-label">
-                  <input type="checkbox" checked={task.completed} onChange={() => handleToggle(task)} />
-                  <span>{task.title}</span>
-                </label>
-                <small>
-                  {task.plannedFor} / {task.priority}
-                  {task.area ? ` / ${task.area}` : ""}
-                </small>
-                <button className="icon-button" onClick={() => handleDelete(task.id)} type="button" title={t("tasks.delete", language)}>
-                  <Trash2 aria-hidden="true" size={16} />
-                </button>
-              </li>
-            ))}
-          </ul>
+          <p className="empty-state">{language === "zh" ? "暂无数据" : "No data yet"}</p>
         )}
       </Panel>
-    </section>
+
+      <Panel title={language === "zh" ? "常用应用" : "Top Apps"}>
+        {activity && activity.topApps.length > 0 ? (
+          <ActivityList entries={activity.topApps} totalSeconds={activity.totalSeconds} language={language} />
+        ) : (
+          <p className="empty-state">{language === "zh" ? "这组数据暂时为空。" : "No app data yet."}</p>
+        )}
+      </Panel>
+
+      <Panel title={language === "zh" ? "常见标题" : "Top Titles"}>
+        {activity && activity.topTitles.length > 0 ? (
+          <ActivityList entries={activity.topTitles} totalSeconds={activity.totalSeconds} language={language} />
+        ) : (
+          <p className="empty-state">{language === "zh" ? "这组数据暂时为空。" : "No title data yet."}</p>
+        )}
+      </Panel>
+
+      <Panel title={language === "zh" ? "后端状态与退出" : "Backend Status & Stop"}>
+        <RuntimeControls language={language} />
+      </Panel>
+    </div>
   );
 }
 
 function ScheduleView({ language }: { language: Language }) {
   const [date, setDate] = useState(todayIso);
-  const [blocks, setBlocks] = useState<ScheduleBlock[]>([]);
-  const [startTime, setStartTime] = useState("09:00");
-  const [endTime, setEndTime] = useState("10:00");
-  const [title, setTitle] = useState("");
-  const [status, setStatus] = useState(t("schedule.loading", language));
+  const [record, setRecord] = useState<DayRecord | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  function reloadSchedule(targetDate = date) {
-    fetchSchedule(targetDate)
-      .then((items) => {
-        setBlocks(items);
-        setStatus(items.length ? `${items.length} ${t("schedule.count", language)}` : t("schedule.noneForDate", language));
+  const [newStart, setNewStart] = useState("09:00");
+  const [newEnd, setNewEnd] = useState("10:30");
+  const [newTitle, setNewTitle] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const [journalDraft, setJournalDraft] = useState("");
+  const [savingJournal, setSavingJournal] = useState(false);
+  const [journalSavedAt, setJournalSavedAt] = useState("");
+  const [journalError, setJournalError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchDayRecord(date)
+      .then((data) => {
+        setRecord(data);
+        setJournalDraft(data.journal.content);
+        setJournalSavedAt(data.journal.updatedAt);
       })
-      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("schedule.loadError", language)));
-  }
-
-  useEffect(() => {
-    reloadSchedule(date);
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load day record"))
+      .finally(() => setLoading(false));
   }, [date]);
 
-  function handleCreate(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleCreateBlock = (event: FormEvent) => {
     event.preventDefault();
-    if (!title.trim()) {
-      setStatus(t("schedule.titleRequired", language));
-      return;
-    }
-    createScheduleBlock({ date, startTime, endTime, title })
+    const title = newTitle.trim();
+    if (!title) return;
+    setCreating(true);
+    setCreateError(null);
+    createScheduleBlock({ date, startTime: newStart, endTime: newEnd, title })
       .then(() => {
-        setTitle("");
-        reloadSchedule();
+        setNewTitle("");
+        load();
       })
-      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("schedule.createError", language)));
+      .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : "Failed to create block"))
+      .finally(() => setCreating(false));
+  };
+
+  const handleSaveJournal = () => {
+    setSavingJournal(true);
+    setJournalError(null);
+    saveJournal(date, journalDraft)
+      .then((journal) => {
+        setJournalSavedAt(journal.updatedAt);
+      })
+      .catch((err: unknown) => setJournalError(err instanceof Error ? err.message : "Failed to save journal"))
+      .finally(() => setSavingJournal(false));
+  };
+
+  if (loading) {
+    return <p className="status-note">{language === "zh" ? "正在读取日程..." : "Loading schedule..."}</p>;
   }
 
-  function handleDelete(id: number) {
-    deleteScheduleBlock(id)
-      .then(() => reloadSchedule())
-      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("schedule.deleteError", language)));
+  if (error || !record) {
+    return <p className="status-note warning">{error ?? "Failed to load day record"}</p>;
+  }
+
+  const activity = record.activity;
+
+  return (
+    <div className="single-column" style={{ gap: "16px" }}>
+      <div className="panel-toolbar">
+        <label className="inline-field">
+          <span>{language === "zh" ? "日期" : "Date"}</span>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </label>
+        <button className="secondary-button" onClick={load} type="button">
+          <RefreshCw aria-hidden="true" size={16} />
+          {language === "zh" ? "刷新" : "Refresh"}
+        </button>
+      </div>
+
+      <div className="content-grid">
+        <Panel title={language === "zh" ? "时间块" : "Schedule Blocks"}>
+          {record.scheduleBlocks.length === 0 ? (
+            <p className="empty-state">{language === "zh" ? "这一天还没有日程块。" : "No schedule blocks for this day."}</p>
+          ) : (
+            <ul className="item-list">
+              {record.scheduleBlocks.map((block) => (
+                <li key={block.id} className="item-row schedule-row">
+                  <strong>{block.startTime} - {block.endTime}</strong>
+                  <span>{block.title}</span>
+                  <button
+                    className="icon-button"
+                    onClick={() => deleteScheduleBlock(block.id).then(load)}
+                    title={language === "zh" ? "删除日程块" : "Delete block"}
+                    type="button"
+                  >
+                    <Trash2 aria-hidden="true" size={16} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <form className="stack-form" onSubmit={handleCreateBlock} style={{ marginTop: 16 }}>
+            <div className="form-grid">
+              <label>
+                {language === "zh" ? "开始" : "Start"}
+                <input type="time" value={newStart} onChange={(e) => setNewStart(e.target.value)} />
+              </label>
+              <label>
+                {language === "zh" ? "结束" : "End"}
+                <input type="time" value={newEnd} onChange={(e) => setNewEnd(e.target.value)} />
+              </label>
+            </div>
+            <label>
+              {language === "zh" ? "标题" : "Title"}
+              <input
+                type="text"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder={language === "zh" ? "学习 attention" : "Study attention"}
+              />
+            </label>
+            {createError && <p className="status-note warning">{createError}</p>}
+            <div className="form-actions">
+              <button className="primary-button" disabled={creating} type="submit">
+                <Plus aria-hidden="true" size={16} />
+                {language === "zh" ? "添加日程" : "Add Block"}
+              </button>
+            </div>
+          </form>
+        </Panel>
+
+        <Panel title={language === "zh" ? "ActivityWatch 汇总" : "ActivityWatch Summary"}>
+          <p className={activity.available ? "status-note" : "status-note warning"}>{activity.message}</p>
+          <dl className="metric-grid">
+            <div>
+              <dt>{language === "zh" ? "记录时长" : "Tracked Time"}</dt>
+              <dd>{formatDuration(activity.totalSeconds)}</dd>
+            </div>
+            <div>
+              <dt>{language === "zh" ? "桶数" : "Buckets"}</dt>
+              <dd>{activity.bucketCount}</dd>
+            </div>
+            <div>
+              <dt>{language === "zh" ? "常见应用" : "Top Apps"}</dt>
+              <dd>{activity.topApps.length}</dd>
+            </div>
+          </dl>
+          {activity.topApps.length > 0 && (
+            <ActivityList entries={activity.topApps} totalSeconds={activity.totalSeconds} language={language} />
+          )}
+        </Panel>
+      </div>
+
+      <Panel title={language === "zh" ? "日志" : "Journal"}>
+        <textarea
+          value={journalDraft}
+          onChange={(e) => setJournalDraft(e.target.value)}
+          placeholder={language === "zh" ? "写下今天学了什么、哪里卡住、明天想继续什么。" : "What did you study today?"}
+        />
+        <div className="form-actions" style={{ marginTop: 12 }}>
+          <button className="primary-button" disabled={savingJournal} onClick={handleSaveJournal} type="button">
+            <Save aria-hidden="true" size={16} />
+            {language === "zh" ? "保存日志" : "Save Journal"}
+          </button>
+          <span className="form-status">
+            {journalError ? (
+              <span className="status-note warning">{journalError}</span>
+            ) : journalSavedAt ? (
+              language === "zh" ? `上次保存: ${journalSavedAt}` : `Last saved: ${journalSavedAt}`
+            ) : (
+              language === "zh" ? "这一天还没有日志。" : "No journal for this day."
+            )}
+          </span>
+        </div>
+      </Panel>
+
+      <Panel title={language === "zh" ? "AI 总结" : "AI Summaries"}>
+        {record.aiSummaries.length === 0 ? (
+          <p className="empty-state">{language === "zh" ? "这一天还没有 AI 总结。" : "No AI summaries for this day."}</p>
+        ) : (
+          <div className="ai-plan">
+            {record.aiSummaries.map((summary) => (
+              <SummaryCard key={summary.id} summary={summary} language={language} />
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      <Panel title={language === "zh" ? "AI 规划" : "AI Plans"}>
+        {record.aiPlans.length === 0 ? (
+          <p className="empty-state">{language === "zh" ? "这一天还没有 AI 规划。" : "No AI plans for this day."}</p>
+        ) : (
+          <div className="ai-plan">
+            {record.aiPlans.map((plan) => (
+              <PlanCard key={plan.id} plan={plan} language={language} onAccepted={() => load()} />
+            ))}
+          </div>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+function TasksView({ language }: { language: Language }) {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [newTitle, setNewTitle] = useState("");
+  const [newArea, setNewArea] = useState("");
+  const [newPriority, setNewPriority] = useState<Priority>("normal");
+  const [creating, setCreating] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchTasks()
+      .then(setTasks)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load tasks"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const todayTasks = useMemo(() => tasks.filter((task) => task.plannedFor === "today"), [tasks]);
+
+  const handleCreate = (event: FormEvent) => {
+    event.preventDefault();
+    const title = newTitle.trim();
+    if (!title) return;
+    setCreating(true);
+    createTask({ title, plannedFor: "today", area: newArea.trim(), priority: newPriority })
+      .then(() => {
+        setNewTitle("");
+        load();
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to create task"))
+      .finally(() => setCreating(false));
+  };
+
+  const handleToggle = (task: Task) => {
+    updateTask(task.id, { completed: !task.completed }).then(load).catch((err: unknown) =>
+      setError(err instanceof Error ? err.message : "Failed to update task"),
+    );
+  };
+
+  const handleDelete = (task: Task) => {
+    deleteTask(task.id).then(load).catch((err: unknown) =>
+      setError(err instanceof Error ? err.message : "Failed to delete task"),
+    );
+  };
+
+  if (loading) {
+    return <p className="status-note">{language === "zh" ? "正在读取任务..." : "Loading tasks..."}</p>;
   }
 
   return (
-    <section className="content-grid task-layout">
-      <Panel title={t("schedule.add", language)}>
+    <div className="single-column task-layout" style={{ gap: "16px" }}>
+      <Panel title={language === "zh" ? "添加今日任务" : "Add Today Task"}>
         <form className="stack-form" onSubmit={handleCreate}>
           <label>
-            {t("field.date", language)}
-            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+            {language === "zh" ? "任务" : "Task"}
+            <input
+              type="text"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder={language === "zh" ? "阅读 attention 代码" : "Read attention code"}
+            />
           </label>
           <div className="form-grid">
             <label>
-              {t("schedule.start", language)}
-              <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
+              {language === "zh" ? "领域" : "Area"}
+              <input type="text" value={newArea} onChange={(e) => setNewArea(e.target.value)} placeholder="AI" />
             </label>
             <label>
-              {t("schedule.end", language)}
-              <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} />
+              {language === "zh" ? "优先级" : "Priority"}
+              <select value={newPriority} onChange={(e) => setNewPriority(e.target.value as Priority)}>
+                <option value="low">{language === "zh" ? "低" : "Low"}</option>
+                <option value="normal">{language === "zh" ? "普通" : "Normal"}</option>
+                <option value="high">{language === "zh" ? "高" : "High"}</option>
+              </select>
             </label>
           </div>
-          <label>
-            {t("schedule.blockTitle", language)}
-            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={t("schedule.placeholder", language)} />
-          </label>
-          <button className="primary-button" type="submit">
-            <Plus aria-hidden="true" size={16} />
-            {t("schedule.addButton", language)}
-          </button>
-          <p className="form-status">{status}</p>
+          {error && <p className="status-note warning">{error}</p>}
+          <div className="form-actions">
+            <button className="primary-button" disabled={creating} type="submit">
+              <Plus aria-hidden="true" size={16} />
+              {language === "zh" ? "添加任务" : "Add Task"}
+            </button>
+          </div>
         </form>
       </Panel>
 
-      <Panel title={t("schedule.blocks", language)}>
-        {blocks.length === 0 ? (
-          <p className="empty-state">{t("schedule.noneForDate", language)}</p>
+      <Panel title={language === "zh" ? `今日任务（${todayTasks.length}）` : `Today Tasks (${todayTasks.length})`}>
+        {todayTasks.length === 0 ? (
+          <p className="empty-state">{language === "zh" ? "今天还没有任务。" : "No tasks for today."}</p>
         ) : (
           <ul className="item-list">
-            {blocks.map((block) => (
-              <li key={block.id} className="item-row schedule-row">
-                <strong>
-                  {block.startTime}-{block.endTime}
-                </strong>
-                <span>{block.title}</span>
-                <button className="icon-button" onClick={() => handleDelete(block.id)} type="button" title={t("schedule.delete", language)}>
+            {todayTasks.map((task) => (
+              <li key={task.id} className={`item-row${task.completed ? " done" : ""}`}>
+                <label className="check-label">
+                  <input type="checkbox" checked={task.completed} onChange={() => handleToggle(task)} />
+                  <span>{task.title}</span>
+                </label>
+                <small>{task.area || "--"} · {task.priority}</small>
+                <button className="icon-button" onClick={() => handleDelete(task)} type="button">
                   <Trash2 aria-hidden="true" size={16} />
                 </button>
               </li>
@@ -988,217 +570,579 @@ function ScheduleView({ language }: { language: Language }) {
           </ul>
         )}
       </Panel>
-    </section>
+    </div>
+  );
+}
+
+function GoalsView({ language }: { language: Language }) {
+  const [goals, setGoals] = useState<LearningGoal[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [currentFocus, setCurrentFocus] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchGoals()
+      .then(setGoals)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load goals"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleCreate = (event: FormEvent) => {
+    event.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setCreating(true);
+    createGoal({ name: trimmed, description: description.trim(), currentFocus: currentFocus.trim(), active: true })
+      .then(() => {
+        setName("");
+        setDescription("");
+        setCurrentFocus("");
+        load();
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to create goal"))
+      .finally(() => setCreating(false));
+  };
+
+  const handleToggleActive = (goal: LearningGoal) => {
+    updateGoal(goal.id, { active: !goal.active }).then(load).catch((err: unknown) =>
+      setError(err instanceof Error ? err.message : "Failed to update goal"),
+    );
+  };
+
+  const handleDelete = (goal: LearningGoal) => {
+    deleteGoal(goal.id).then(load).catch((err: unknown) =>
+      setError(err instanceof Error ? err.message : "Failed to delete goal"),
+    );
+  };
+
+  if (loading) {
+    return <p className="status-note">{language === "zh" ? "正在读取学习目标..." : "Loading goals..."}</p>;
+  }
+
+  return (
+    <div className="single-column" style={{ gap: "16px" }}>
+      <Panel title={language === "zh" ? "添加学习目标" : "Add Goal"}>
+        <form className="stack-form" onSubmit={handleCreate}>
+          <label>
+            {language === "zh" ? "目标名称" : "Goal Name"}
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={language === "zh" ? "掌握 Transformer" : "Master Transformers"} />
+          </label>
+          <label>
+            {language === "zh" ? "描述" : "Description"}
+            <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </label>
+          <label>
+            {language === "zh" ? "当前阶段" : "Current Focus"}
+            <input type="text" value={currentFocus} onChange={(e) => setCurrentFocus(e.target.value)} placeholder={language === "zh" ? "注意力机制" : "Attention mechanism"} />
+          </label>
+          {error && <p className="status-note warning">{error}</p>}
+          <div className="form-actions">
+            <button className="primary-button" disabled={creating} type="submit">
+              <Plus aria-hidden="true" size={16} />
+              {language === "zh" ? "添加目标" : "Add Goal"}
+            </button>
+          </div>
+        </form>
+      </Panel>
+
+      <Panel title={language === "zh" ? `学习目标（${goals.length}）` : `Goals (${goals.length})`}>
+        {goals.length === 0 ? (
+          <p className="empty-state">{language === "zh" ? "还没有学习目标。" : "No goals yet."}</p>
+        ) : (
+          <ul className="item-list">
+            {goals.map((goal) => (
+              <li key={goal.id} className="item-row">
+                <strong>{goal.name}</strong>
+                <small>
+                  {goal.description || "--"} · {language === "zh" ? "阶段" : "Focus"}: {goal.currentFocus || "--"} ·{" "}
+                  {goal.active ? (language === "zh" ? "进行中" : "Active") : (language === "zh" ? "已暂停" : "Paused")}
+                </small>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="secondary-button" onClick={() => handleToggleActive(goal)} type="button">
+                    {goal.active ? (language === "zh" ? "暂停" : "Pause") : (language === "zh" ? "激活" : "Activate")}
+                  </button>
+                  <button className="icon-button" onClick={() => handleDelete(goal)} type="button">
+                    <Trash2 aria-hidden="true" size={16} />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+function AISummaryView({ language }: { language: Language }) {
+  const [date, setDate] = useState(todayIso);
+  const [summaries, setSummaries] = useState<AISummaryRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchAISummaries(date)
+      .then(setSummaries)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load summaries"))
+      .finally(() => setLoading(false));
+  }, [date]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleGenerate = () => {
+    setGenerating(true);
+    setError(null);
+    generateAISummary(date)
+      .then(() => load())
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to generate summary"))
+      .finally(() => setGenerating(false));
+  };
+
+  return (
+    <div className="single-column" style={{ gap: "16px" }}>
+      <div className="panel-toolbar">
+        <label className="inline-field">
+          <span>{language === "zh" ? "日期" : "Date"}</span>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </label>
+        <button className="primary-button" disabled={generating} onClick={handleGenerate} type="button">
+          <Sparkles aria-hidden="true" size={16} />
+          {language === "zh" ? "生成 AI 总结" : "Generate Summary"}
+        </button>
+        <button className="secondary-button" onClick={load} type="button">
+          <RefreshCw aria-hidden="true" size={16} />
+          {language === "zh" ? "刷新" : "Refresh"}
+        </button>
+      </div>
+
+      {error && <p className="status-note warning">{error}</p>}
+
+      {loading ? (
+        <p className="status-note">{language === "zh" ? "正在读取 AI 总结..." : "Loading summaries..."}</p>
+      ) : summaries.length === 0 ? (
+        <p className="empty-state">{language === "zh" ? "这一天还没有 AI 总结。" : "No AI summaries for this day."}</p>
+      ) : (
+        <div className="ai-plan">
+          {summaries.map((summary) => (
+            <SummaryCard key={summary.id} summary={summary} language={language} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AIPlanningView({ language }: { language: Language }) {
+  const [goals, setGoals] = useState<LearningGoal[]>([]);
+  const [goalId, setGoalId] = useState<number | null>(null);
+  const [date, setDate] = useState(todayIso);
+  const [plans, setPlans] = useState<AIPlanRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+
+  const loadGoals = useCallback(() => {
+    fetchGoals()
+      .then((data) => {
+        setGoals(data);
+        if (data.length > 0 && goalId === null) {
+          setGoalId(data[0].id);
+        }
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load goals"));
+  }, [goalId]);
+
+  const loadPlans = useCallback(() => {
+    if (goalId === null) {
+      setPlans([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    fetchAIPlans(date, goalId)
+      .then(setPlans)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load plans"))
+      .finally(() => setLoading(false));
+  }, [date, goalId]);
+
+  useEffect(() => {
+    loadGoals();
+  }, [loadGoals]);
+
+  useEffect(() => {
+    loadPlans();
+  }, [loadPlans]);
+
+  const handleGenerate = () => {
+    if (goalId === null) return;
+    setGenerating(true);
+    setError(null);
+    generateAIPlan({ date, goalId })
+      .then(() => loadPlans())
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to generate plan"))
+      .finally(() => setGenerating(false));
+  };
+
+  const activeGoals = goals.filter((goal) => goal.active);
+
+  return (
+    <div className="single-column" style={{ gap: "16px" }}>
+      <div className="panel-toolbar">
+        <label className="inline-field">
+          <span>{language === "zh" ? "目标" : "Goal"}</span>
+          <select value={goalId ?? ""} onChange={(e) => setGoalId(e.target.value ? Number(e.target.value) : null)}>
+            {activeGoals.length === 0 ? (
+              <option value="">{language === "zh" ? "请先创建目标" : "Create a goal first"}</option>
+            ) : (
+              activeGoals.map((goal) => (
+                <option key={goal.id} value={goal.id}>
+                  {goal.name}
+                </option>
+              ))
+            )}
+          </select>
+        </label>
+        <label className="inline-field">
+          <span>{language === "zh" ? "日期" : "Date"}</span>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </label>
+        <button className="primary-button" disabled={generating || goalId === null} onClick={handleGenerate} type="button">
+          <Sparkles aria-hidden="true" size={16} />
+          {language === "zh" ? "生成 AI 规划" : "Generate Plan"}
+        </button>
+        <button className="secondary-button" onClick={loadPlans} type="button">
+          <RefreshCw aria-hidden="true" size={16} />
+          {language === "zh" ? "刷新" : "Refresh"}
+        </button>
+      </div>
+
+      {error && <p className="status-note warning">{error}</p>}
+
+      {loading ? (
+        <p className="status-note">{language === "zh" ? "正在读取 AI 规划..." : "Loading plans..."}</p>
+      ) : plans.length === 0 ? (
+        <p className="empty-state">{language === "zh" ? "还没有 AI 规划。" : "No AI plans yet."}</p>
+      ) : (
+        <div className="ai-plan">
+          {plans.map((plan) => (
+            <PlanCard key={plan.id} plan={plan} language={language} onAccepted={() => loadPlans()} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function JournalView({ language }: { language: Language }) {
+  const [date, setDate] = useState(todayIso);
+  const [journal, setJournal] = useState<Journal | null>(null);
+  const [draft, setDraft] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchJournal(date)
+      .then((data) => {
+        setJournal(data);
+        setDraft(data.content);
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load journal"))
+      .finally(() => setLoading(false));
+  }, [date]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleSave = () => {
+    setSaving(true);
+    setError(null);
+    saveJournal(date, draft)
+      .then(setJournal)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to save journal"))
+      .finally(() => setSaving(false));
+  };
+
+  if (loading) {
+    return <p className="status-note">{language === "zh" ? "正在读取日志..." : "Loading journal..."}</p>;
+  }
+
+  return (
+    <div className="single-column" style={{ gap: "16px" }}>
+      <div className="panel-toolbar">
+        <label className="inline-field">
+          <span>{language === "zh" ? "日期" : "Date"}</span>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </label>
+        <button className="secondary-button" onClick={load} type="button">
+          <RefreshCw aria-hidden="true" size={16} />
+          {language === "zh" ? "刷新" : "Refresh"}
+        </button>
+      </div>
+      {error && <p className="status-note warning">{error}</p>}
+      <Panel title={language === "zh" ? "每日学习日志" : "Daily Journal"}>
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={language === "zh" ? "写下今天学了什么、哪里卡住、明天想继续什么。" : "What did you study today?"}
+        />
+        <div className="form-actions" style={{ marginTop: 12 }}>
+          <button className="primary-button" disabled={saving} onClick={handleSave} type="button">
+            <Save aria-hidden="true" size={16} />
+            {language === "zh" ? "保存日志" : "Save Journal"}
+          </button>
+          {journal && (
+            <span className="form-status">
+              {language === "zh" ? `上次保存: ${journal.updatedAt}` : `Last saved: ${journal.updatedAt}`}
+            </span>
+          )}
+        </div>
+      </Panel>
+    </div>
   );
 }
 
 function AIConfigView({ language }: { language: Language }) {
+  const [config, setConfig] = useState<AIConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [provider, setProvider] = useState<AIProviderName>("mock");
   const [endpoint, setEndpoint] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [sendActivityTitles, setSendActivityTitles] = useState(true);
-  const [hasApiKey, setHasApiKey] = useState(false);
-  const [status, setStatus] = useState(t("aiConfig.loading", language));
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchAIConfig()
+      .then((data) => {
+        setConfig(data);
+        setProvider(data.provider);
+        setEndpoint(data.endpoint);
+        setModel(data.model);
+        setSendActivityTitles(data.sendActivityTitles);
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load AI config"))
+      .finally(() => setLoading(false));
+  }, []);
 
   useEffect(() => {
-    setStatus(t("aiConfig.loading", language));
-    fetchAIConfig()
-      .then((config) => {
-        setProvider(config.provider);
-        setEndpoint(config.endpoint || defaultEndpointForProvider(config.provider));
-        setModel(config.model || defaultModelForProvider(config.provider));
-        setSendActivityTitles(config.sendActivityTitles);
-        setHasApiKey(config.hasApiKey);
-        setApiKey("");
-        setStatus(t("aiConfig.loaded", language));
-      })
-      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("aiConfig.loadError", language)));
-  }, [language]);
+    load();
+  }, [load]);
 
-  function currentPayload() {
-    return {
+  const handleSave = (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setSaveMessage(null);
+    saveAIConfig({
       provider,
       endpoint,
       model,
-      apiKey: apiKey.trim() ? apiKey : undefined,
+      apiKey: apiKey.length > 0 ? apiKey : undefined,
       sendActivityTitles,
-    };
-  }
-
-  function handleProviderChange(nextProvider: AIProviderName) {
-    setProvider(nextProvider);
-    setEndpoint(defaultEndpointForProvider(nextProvider));
-    setModel(defaultModelForProvider(nextProvider));
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatus(t("aiConfig.saving", language));
-    saveAIConfig(currentPayload())
-      .then((config) => {
-        setHasApiKey(config.hasApiKey);
+    })
+      .then((data) => {
+        setConfig(data);
         setApiKey("");
-        setStatus(t("aiConfig.saved", language));
+        setSaveMessage(language === "zh" ? "配置已保存" : "Config saved");
       })
-      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("aiConfig.saveError", language)));
+      .catch((err: unknown) => setSaveMessage(err instanceof Error ? err.message : "Failed to save config"))
+      .finally(() => setSaving(false));
+  };
+
+  const handleTest = () => {
+    setTesting(true);
+    setTestResult(null);
+    testAIConfig({
+      provider,
+      endpoint,
+      model,
+      apiKey: apiKey.length > 0 ? apiKey : undefined,
+      sendActivityTitles,
+    })
+      .then((result) =>
+        setTestResult(result.ok ? `OK: ${result.message}` : `Failed: ${result.message}`),
+      )
+      .catch((err: unknown) => setTestResult(err instanceof Error ? err.message : "Test failed"))
+      .finally(() => setTesting(false));
+  };
+
+  if (loading) {
+    return <p className="status-note">{language === "zh" ? "正在读取 AI 配置..." : "Loading AI config..."}</p>;
   }
 
-  function handleTest() {
-    setStatus(t("aiConfig.testing", language));
-    testAIConfig(currentPayload())
-      .then((result) => {
-        setStatus(`${result.ok ? t("aiConfig.testOk", language) : t("aiConfig.testFail", language)}: ${result.message}`);
-      })
-      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("aiConfig.testFail", language)));
+  if (error || !config) {
+    return <p className="status-note warning">{error ?? "Failed to load AI config"}</p>;
   }
 
   return (
-    <section className="single-column">
-      <Panel title={t("aiConfig.title", language)}>
-        <form className="stack-form" onSubmit={handleSubmit}>
-          <label>
-            {t("aiConfig.provider", language)}
-            <select value={provider} onChange={(event) => handleProviderChange(event.target.value as AIProviderName)}>
-              <option value="mock">mock</option>
-              <option value="openai">openai</option>
-              <option value="deepseek">deepseek</option>
-              <option value="ollama">ollama</option>
-            </select>
-          </label>
+    <div className="single-column" style={{ gap: "16px" }}>
+      <Panel title={language === "zh" ? "AI 提供商配置" : "AI Provider Config"}>
+        <form className="stack-form" onSubmit={handleSave}>
           <div className="form-grid">
             <label>
-              {t("aiConfig.endpoint", language)}
-              <input value={endpoint} onChange={(event) => setEndpoint(event.target.value)} placeholder={defaultEndpointForProvider(provider)} />
+              {language === "zh" ? "提供商" : "Provider"}
+              <select value={provider} onChange={(e) => setProvider(e.target.value as AIProviderName)}>
+                <option value="mock">Mock</option>
+                <option value="openai">OpenAI</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="ollama">Ollama</option>
+              </select>
             </label>
             <label>
-              {t("aiConfig.model", language)}
-              <input value={model} onChange={(event) => setModel(event.target.value)} placeholder={defaultModelForProvider(provider)} />
+              {language === "zh" ? "模型" : "Model"}
+              <input type="text" value={model} onChange={(e) => setModel(e.target.value)} />
+            </label>
+            <label>
+              {language === "zh" ? "接口地址" : "Endpoint"}
+              <input type="text" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="https://api.openai.com/v1" />
+            </label>
+            <label>
+              {language === "zh" ? "API Key" : "API Key"}
+              <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={language === "zh" ? "已保存，留空则保持不变" : "Saved, leave blank to keep"} />
             </label>
           </div>
-          <label>
-            {t("aiConfig.apiKey", language)}
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-              placeholder={hasApiKey ? t("aiConfig.apiKeySaved", language) : t("aiConfig.apiKeyPlaceholder", language)}
-            />
-          </label>
           <label className="toggle-row">
-            <input type="checkbox" checked={sendActivityTitles} onChange={(event) => setSendActivityTitles(event.target.checked)} />
-            <span>{t("aiConfig.sendTitles", language)}</span>
+            <input
+              type="checkbox"
+              checked={sendActivityTitles}
+              onChange={(e) => setSendActivityTitles(e.target.checked)}
+            />
+            <span>{language === "zh" ? "允许把 ActivityWatch 窗口标题发送给 AI" : "Send ActivityWatch titles to AI"}</span>
           </label>
+          {saveMessage && <p className="status-note">{saveMessage}</p>}
           <div className="form-actions">
-            <button className="primary-button" type="submit">
+            <button className="primary-button" disabled={saving} type="submit">
               <Save aria-hidden="true" size={16} />
-              {t("aiConfig.save", language)}
+              {language === "zh" ? "保存配置" : "Save Config"}
             </button>
-            <button className="secondary-button" onClick={handleTest} type="button">
-              <Sparkles aria-hidden="true" size={16} />
-              {t("aiConfig.test", language)}
+            <button className="secondary-button" disabled={testing} onClick={handleTest} type="button">
+              <RefreshCw aria-hidden="true" size={16} />
+              {language === "zh" ? "测试连接" : "Test Connection"}
             </button>
-            <span>{status}</span>
+            {testResult && <span className="form-status">{testResult}</span>}
           </div>
         </form>
       </Panel>
-    </section>
+    </div>
   );
 }
 
 function SettingsView({ language }: { language: Language }) {
   const [settings, setSettings] = useState<PublicSettings | null>(null);
-  const [status, setStatus] = useState(t("settings.loading", language));
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setStatus(t("settings.loading", language));
     fetchSettings()
-      .then((result) => {
-        setSettings(result);
-        setStatus(t("settings.loaded", language));
-      })
-      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("settings.loadError", language)));
-  }, [language]);
+      .then(setSettings)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load settings"));
+  }, []);
 
   return (
-    <section className="single-column settings-layout">
-      <Panel title={t("settings.title", language)}>
-        {settings ? (
+    <div className="single-column settings-layout" style={{ gap: "16px" }}>
+      <Panel title={language === "zh" ? "运行设置" : "Runtime Settings"}>
+        {error ? (
+          <p className="status-note warning">{error}</p>
+        ) : settings ? (
           <dl className="settings-list">
             <div>
               <dt>ActivityWatch</dt>
               <dd>{settings.activitywatchUrl}</dd>
             </div>
             <div>
-              <dt>API</dt>
-              <dd>
-                {settings.host}:{settings.port}
-              </dd>
+              <dt>Host</dt>
+              <dd>{settings.host}</dd>
+            </div>
+            <div>
+              <dt>Port</dt>
+              <dd>{settings.port}</dd>
             </div>
           </dl>
         ) : (
-          <p className="empty-state">{status}</p>
+          <p className="empty-state">{language === "zh" ? "正在读取..." : "Loading..."}</p>
         )}
-        {settings ? <p className="form-status settings-status">{status}</p> : null}
       </Panel>
-      <RuntimePanel language={language} />
-    </section>
+
+      <Panel title={language === "zh" ? "后端状态与退出" : "Backend Status & Stop"}>
+        <RuntimeControls language={language} />
+      </Panel>
+    </div>
   );
 }
 
-function RuntimePanel({ language }: { language: Language }) {
+function RuntimeControls({ language }: { language: Language }) {
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null);
-  const [status, setStatus] = useState(t("runtime.loading", language));
+  const [status, setStatus] = useState<string>(language === "zh" ? "正在读取后端状态..." : "Loading runtime status...");
   const [stopping, setStopping] = useState(false);
 
-  function loadRuntime() {
-    setStatus(t("runtime.loading", language));
+  const load = useCallback(() => {
     fetchRuntimeStatus()
-      .then((result) => {
-        setRuntime(result);
-        setStatus("");
-      })
-      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("runtime.loadError", language)));
-  }
-
-  useEffect(() => {
-    loadRuntime();
+      .then(setRuntime)
+      .then(() => setStatus(language === "zh" ? "后端状态已更新" : "Runtime status updated"))
+      .catch((err: unknown) => setStatus(err instanceof Error ? err.message : "Failed to load runtime status"));
   }, [language]);
 
-  function handleStop() {
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleStop = () => {
     setStopping(true);
-    setStatus(t("runtime.stopping", language));
+    setStatus(language === "zh" ? "正在退出..." : "Stopping...");
     stopRuntime()
-      .then(() => setStatus(t("runtime.stopDone", language)))
-      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : t("runtime.loadError", language)))
+      .then(() => setStatus(language === "zh" ? "已请求退出" : "Stop requested"))
+      .catch((err: unknown) => setStatus(err instanceof Error ? err.message : "Failed to stop"))
       .finally(() => setStopping(false));
-  }
+  };
 
   return (
-    <Panel title={t("runtime.title", language)}>
+    <div>
       <div className="panel-toolbar">
-        <button className="secondary-button" onClick={loadRuntime} type="button">
+        <button className="secondary-button" onClick={load} type="button">
           <RefreshCw aria-hidden="true" size={16} />
-          {t("runtime.refresh", language)}
+          {language === "zh" ? "刷新状态" : "Refresh"}
         </button>
         <button className="danger-button" onClick={handleStop} disabled={stopping} type="button">
           <SquarePower aria-hidden="true" size={16} />
-          {t("runtime.stop", language)}
+          {language === "zh" ? "退出程序" : "Stop"}
         </button>
         <span>{status}</span>
       </div>
-      {runtime ? (
+      {runtime && (
         <div className="runtime-grid">
-          <RuntimeCard title={t("runtime.backend", language)} process={runtime.backend} language={language} />
-          <RuntimeCard title={t("runtime.frontend", language)} process={runtime.frontend} language={language} />
+          <RuntimeCard title={language === "zh" ? "后端" : "Backend"} process={runtime.backend} language={language} />
+          <RuntimeCard title={language === "zh" ? "前端" : "Frontend"} process={runtime.frontend} language={language} />
           <p className="form-status runtime-meta">
-            {runtime.managed ? `${t("runtime.updatedAt", language)}: ${runtime.updatedAt || "--"}` : t("runtime.unmanaged", language)}
+            {runtime.managed
+              ? `${language === "zh" ? "更新时间" : "Updated"}: ${runtime.updatedAt || "--"}`
+              : language === "zh" ? "非托管模式" : "Unmanaged"}
           </p>
         </div>
-      ) : (
-        <p className="empty-state">{status}</p>
       )}
-    </Panel>
+    </div>
   );
 }
 
@@ -1214,24 +1158,130 @@ function RuntimeCard({
   return (
     <div className="runtime-card">
       <strong>{title}</strong>
-      <span>{process.running ? t("runtime.running", language) : t("runtime.stopped", language)}</span>
+      <span>{process.running ? (language === "zh" ? "运行中" : "Running") : (language === "zh" ? "已停止" : "Stopped")}</span>
       <small>
-        {t("runtime.pid", language)}: {process.pid ?? "--"}
+        {language === "zh" ? "PID" : "PID"}: {process.pid ?? "--"}
       </small>
       <small>{process.startedAt || "--"}</small>
     </div>
   );
 }
 
-function LanguageToggle({
-  language,
-  onChange,
-}: {
-  language: Language;
-  onChange: (language: Language) => void;
-}) {
+function SummaryCard({ summary, language }: { summary: AISummaryRecord; language: Language }) {
+  const result = summary.result;
   return (
-    <div className="segmented-control" aria-label={t("language.label", language)}>
+    <div className="ai-section">
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <strong>{language === "zh" ? "评分" : "Score"}: {summary.score}</strong>
+        <small>{summary.provider} · {summary.createdAt}</small>
+      </div>
+      <p className="summary-text">{result.summary}</p>
+      {result.strengths.length > 0 && (
+        <div className="ai-section">
+          <h4>{language === "zh" ? "亮点" : "Strengths"}</h4>
+          <ol className="plain-list compact-list">
+            {result.strengths.map((item, index) => <li key={index}>{item}</li>)}
+          </ol>
+        </div>
+      )}
+      {result.blockers.length > 0 && (
+        <div className="ai-section">
+          <h4>{language === "zh" ? "阻碍" : "Blockers"}</h4>
+          <ol className="plain-list compact-list">
+            {result.blockers.map((item, index) => <li key={index}>{item}</li>)}
+          </ol>
+        </div>
+      )}
+      {result.improvements.length > 0 && (
+        <div className="ai-section">
+          <h4>{language === "zh" ? "改进建议" : "Improvements"}</h4>
+          <ol className="plain-list compact-list">
+            {result.improvements.map((item, index) => <li key={index}>{item}</li>)}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlanCard({
+  plan,
+  language,
+  onAccepted,
+}: {
+  plan: AIPlanRecord;
+  language: Language;
+  onAccepted: () => void;
+}) {
+  const result = plan.result;
+  const [accepting, setAccepting] = useState<number | null>(null);
+
+  const handleAccept = (suggestionId: number) => {
+    setAccepting(suggestionId);
+    acceptPlannedTask(plan.id, suggestionId)
+      .then(() => onAccepted())
+      .catch(() => {
+        // error handled by reload
+      })
+      .finally(() => setAccepting(null));
+  };
+
+  return (
+    <div className="ai-section">
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <small>{plan.provider} · {plan.createdAt}</small>
+      </div>
+      {result.todayPlan.length > 0 && (
+        <div className="ai-section">
+          <h4>{language === "zh" ? "今日计划" : "Today Plan"}</h4>
+          <ol className="plain-list compact-list">
+            {result.todayPlan.map((item, index) => <li key={index}>{item}</li>)}
+          </ol>
+        </div>
+      )}
+      {result.weekPlan.length > 0 && (
+        <div className="ai-section">
+          <h4>{language === "zh" ? "本周计划" : "Week Plan"}</h4>
+          <ol className="plain-list compact-list">
+            {result.weekPlan.map((item, index) => <li key={index}>{item}</li>)}
+          </ol>
+        </div>
+      )}
+      {result.suggestedTasks.length > 0 && (
+        <div className="ai-section">
+          <h4>{language === "zh" ? "建议任务" : "Suggested Tasks"}</h4>
+          <ul className="suggestion-list">
+            {result.suggestedTasks.map((task) => (
+              <li key={task.id}>
+                <strong>{task.title}</strong>
+                <span>{task.reason}</span>
+                {task.accepted ? (
+                  <span className="tag-list">
+                    <span>{language === "zh" ? "已加入" : "Accepted"}</span>
+                  </span>
+                ) : (
+                  <button
+                    className="secondary-button"
+                    disabled={accepting === task.id}
+                    onClick={() => handleAccept(task.id)}
+                    type="button"
+                  >
+                    <Plus aria-hidden="true" size={14} />
+                    {language === "zh" ? "加入今日任务" : "Accept"}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LanguageToggle({ language, onChange }: { language: Language; onChange: (lang: Language) => void }) {
+  return (
+    <div className="segmented-control" aria-label="Language">
       <Languages aria-hidden="true" size={16} />
       <button className={language === "zh" ? "active" : ""} onClick={() => onChange("zh")} type="button">
         中
@@ -1243,53 +1293,19 @@ function LanguageToggle({
   );
 }
 
-function HealthBadge({
-  health,
-  error,
-  language,
-}: {
-  health: HealthResponse | null;
-  error: string | null;
-  language: Language;
-}) {
+function HealthBadge({ health, error, language }: { health: HealthResponse | null; error: string | null; language: Language }) {
   if (health) {
     return (
       <div className="status-badge online" title={`${health.appName} ${health.version}`}>
-        {t("api.online", language)}
+        {language === "zh" ? "API 在线" : "API Online"}
       </div>
     );
   }
-
   return (
     <div className="status-badge offline" title={error ?? "Backend unavailable"}>
-      {t("api.offline", language)}
+      {language === "zh" ? "API 离线" : "API Offline"}
     </div>
   );
-}
-
-function viewTitle(view: ViewId, language: Language): string {
-  const match = navItems.find((item) => item.id === view);
-  return match ? t(match.labelKey, language) : t("nav.today", language);
-}
-
-function StatusNote({
-  activity,
-  error,
-  language,
-}: {
-  activity: TodayActivityResponse | null;
-  error: string | null;
-  language: Language;
-}) {
-  if (error) {
-    return <p className="status-note warning">{error}</p>;
-  }
-
-  if (!activity) {
-    return <p className="status-note">{t("activity.loading", language)}</p>;
-  }
-
-  return <p className={activity.available ? "status-note" : "status-note warning"}>{activity.message}</p>;
 }
 
 function ActivityList({
@@ -1302,9 +1318,8 @@ function ActivityList({
   language: Language;
 }) {
   if (entries.length === 0) {
-    return <p className="empty-state">{t("activity.empty", language)}</p>;
+    return <p className="empty-state">{language === "zh" ? "这组数据暂时为空。" : "No data."}</p>;
   }
-
   return (
     <ol className="activity-list">
       {entries.map((entry) => {
@@ -1325,23 +1340,28 @@ function ActivityList({
   );
 }
 
-function formatDuration(seconds: number): string {
-  if (seconds <= 0) {
-    return "0m";
-  }
+function Panel({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="panel">
+      <h3>{title}</h3>
+      {children}
+    </section>
+  );
+}
 
+function navLabel(view: ViewId, language: Language): string {
+  const item = navItems.find((entry) => entry.id === view);
+  if (!item) return language === "zh" ? "今日" : "Today";
+  return language === "zh" ? item.zh : item.en;
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds <= 0) return "0m";
   const totalMinutes = Math.round(seconds / 60);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-
-  if (hours === 0) {
-    return `${minutes}m`;
-  }
-
-  if (minutes === 0) {
-    return `${hours}h`;
-  }
-
+  if (hours === 0) return `${minutes}m`;
+  if (minutes === 0) return `${hours}h`;
   return `${hours}h ${minutes}m`;
 }
 
@@ -1350,47 +1370,4 @@ function localDateString(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-function defaultEndpointForProvider(provider: AIProviderName): string {
-  switch (provider) {
-    case "openai":
-      return "https://api.openai.com/v1";
-    case "deepseek":
-      return "https://api.deepseek.com/v1";
-    case "ollama":
-      return "http://localhost:11434";
-    default:
-      return "";
-  }
-}
-
-function defaultModelForProvider(provider: AIProviderName): string {
-  switch (provider) {
-    case "openai":
-      return "gpt-4.1-mini";
-    case "deepseek":
-      return "deepseek-chat";
-    case "ollama":
-      return "llama3.1";
-    default:
-      return "";
-  }
-}
-
-function readStoredLanguage(): Language {
-  return localStorage.getItem(languageStorageKey) === "en" ? "en" : "zh";
-}
-
-function t(key: I18nKey, language: Language): string {
-  return translations[language][key];
-}
-
-function Panel({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="panel">
-      <h3>{title}</h3>
-      {children}
-    </section>
-  );
 }

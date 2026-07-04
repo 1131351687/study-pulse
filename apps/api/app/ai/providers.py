@@ -6,6 +6,11 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
+DEFAULT_HTTP_HEADERS = {
+    "User-Agent": "StudyPulse/0.1 (+https://github.com/1131351687/study-pulse)",
+}
+
+
 class AIProvider(Protocol):
     def generate_daily_plan(self, context: dict[str, Any]) -> dict[str, Any]:
         ...
@@ -99,6 +104,53 @@ def create_provider(provider: str, endpoint: str, model: str, api_key: str) -> A
             return MockAIProvider()
 
 
+def request_json_response(
+    provider: str,
+    endpoint: str,
+    model: str,
+    api_key: str,
+    system_prompt: str,
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    provider_name = provider.lower()
+    if provider_name == "mock":
+        return {}
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": json.dumps(context, ensure_ascii=False)},
+    ]
+
+    if provider_name in {"openai", "deepseek"}:
+        selected_endpoint = endpoint.rstrip("/") or ("https://api.deepseek.com/v1" if provider_name == "deepseek" else "https://api.openai.com/v1")
+        selected_model = model or ("deepseek-chat" if provider_name == "deepseek" else "gpt-4.1-mini")
+        if not api_key:
+            raise ValueError(f"API key is required for {provider_name}.")
+        response = _post_json(
+            f"{selected_endpoint}/chat/completions",
+            {
+                "model": selected_model,
+                "messages": messages,
+                "temperature": 0.2,
+                "response_format": {"type": "json_object"},
+            },
+            {"Authorization": f"Bearer {api_key}"},
+        )
+        return _parse_json_content(response["choices"][0]["message"]["content"])
+
+    if provider_name == "ollama":
+        selected_endpoint = endpoint.rstrip("/") or "http://localhost:11434"
+        selected_model = model or "llama3.1"
+        response = _post_json(
+            f"{selected_endpoint}/api/chat",
+            {"model": selected_model, "messages": messages, "stream": False, "format": "json"},
+            {},
+        )
+        return _parse_json_content(response["message"]["content"])
+
+    raise ValueError(f"Unsupported provider: {provider_name}")
+
+
 def test_provider_connection(provider: str, endpoint: str, model: str, api_key: str) -> dict[str, Any]:
     provider_name = provider.lower()
     try:
@@ -109,6 +161,18 @@ def test_provider_connection(provider: str, endpoint: str, model: str, api_key: 
                 selected_endpoint = endpoint.rstrip("/") or "https://api.openai.com/v1"
                 selected_model = model or "gpt-4.1-mini"
                 success_message = "OpenAI-compatible chat request succeeded."
+                _post_json(
+                    f"{selected_endpoint}/chat/completions",
+                    {
+                        "model": selected_model,
+                        "messages": [{"role": "user", "content": "Reply with ok."}],
+                        "temperature": 0,
+                        "max_tokens": 8,
+                    },
+                    {"Authorization": f"Bearer {api_key}"},
+                    timeout_seconds=20,
+                )
+                return {"ok": True, "provider": provider_name, "message": success_message}
             case "deepseek":
                 if not api_key:
                     return {"ok": False, "provider": provider_name, "message": "API key is required for DeepSeek."}
@@ -171,7 +235,12 @@ def _post_json(
     request = Request(
         url,
         data=body,
-        headers={"Content-Type": "application/json", "Accept": "application/json", **headers},
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            **DEFAULT_HTTP_HEADERS,
+            **headers,
+        },
         method="POST",
     )
     try:

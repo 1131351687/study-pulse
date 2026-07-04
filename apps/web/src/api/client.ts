@@ -74,52 +74,6 @@ export type AITestResponse = {
   message: string;
 };
 
-export type SuggestedTask = {
-  title: string;
-  plannedFor: string;
-  reason: string;
-};
-
-export type SuggestedScheduleBlock = {
-  startTime: string;
-  endTime: string;
-  title: string;
-};
-
-export type DailyPlanResult = {
-  summary: string;
-  topics: string[];
-  timeInsights: string[];
-  unfinishedReasons: string[];
-  suggestedTasks: SuggestedTask[];
-  tomorrowSchedule: SuggestedScheduleBlock[];
-};
-
-export type DailyPlanResponse = {
-  date: string;
-  provider: string;
-  result: DailyPlanResult | null;
-  updatedAt?: string;
-};
-
-export type HistoryScheduleBlock = {
-  startTime: string;
-  endTime: string;
-  title: string;
-};
-
-export type HistoryDay = {
-  date: string;
-  journalPreview: string;
-  journalUpdatedAt: string;
-  scheduleBlocks: HistoryScheduleBlock[];
-  hasPlan: boolean;
-  planProvider: string;
-  planSummary: string;
-  activityAvailable: boolean;
-  trackedSeconds: number;
-};
-
 export type RuntimeProcessStatus = {
   running: boolean;
   pid: number | null;
@@ -134,24 +88,80 @@ export type RuntimeStatus = {
   updatedAt: string;
 };
 
+export type LearningGoal = {
+  id: number;
+  name: string;
+  description: string;
+  currentFocus: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AISummaryResult = {
+  score: number;
+  summary: string;
+  strengths: string[];
+  blockers: string[];
+  improvements: string[];
+};
+
+export type AISummaryRecord = {
+  id: number;
+  date?: string;
+  provider: string;
+  score: number;
+  result: AISummaryResult;
+  createdAt: string;
+};
+
+export type AIPlannedTask = {
+  id: number;
+  title: string;
+  reason: string;
+  plannedFor: string;
+  accepted: boolean;
+  acceptedTaskId: number | null;
+  createdAt: string;
+};
+
+export type AIPlanResult = {
+  todayPlan: string[];
+  weekPlan: string[];
+  suggestedTasks: AIPlannedTask[];
+};
+
+export type AIPlanRecord = {
+  id: number;
+  date: string;
+  goalId: number;
+  provider: string;
+  result: AIPlanResult;
+  createdAt: string;
+};
+
+export type DayRecord = {
+  date: string;
+  journal: Journal;
+  scheduleBlocks: Omit<ScheduleBlock, "date">[];
+  activity: TodayActivityResponse;
+  aiSummaries: AISummaryRecord[];
+  aiPlans: Array<AIPlanRecord & { goalName?: string }>;
+};
+
 export async function fetchHealth(): Promise<HealthResponse> {
   const response = await fetch(`${API_BASE_URL}/api/health`);
-
-  if (!response.ok) {
-    throw new Error(`Health check failed with status ${response.status}`);
-  }
-
-  return response.json() as Promise<HealthResponse>;
+  return readJson<HealthResponse>(response);
 }
 
 export async function fetchTodayActivity(): Promise<TodayActivityResponse> {
   const response = await fetch(`${API_BASE_URL}/api/activity/today`);
+  return readJson<TodayActivityResponse>(response);
+}
 
-  if (!response.ok) {
-    throw new Error(`Activity request failed with status ${response.status}`);
-  }
-
-  return response.json() as Promise<TodayActivityResponse>;
+export async function fetchDayActivity(date: string): Promise<TodayActivityResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/activity/${date}`);
+  return readJson<TodayActivityResponse>(response);
 }
 
 export async function fetchJournal(date: string): Promise<Journal> {
@@ -187,7 +197,10 @@ export async function createTask(payload: {
   return readJson<Task>(response);
 }
 
-export async function updateTask(id: number, payload: Partial<Task>): Promise<Task> {
+export async function updateTask(
+  id: number,
+  payload: Partial<Pick<Task, "title" | "completed" | "plannedFor" | "area" | "priority">>,
+): Promise<Task> {
   const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -265,25 +278,6 @@ export async function testAIConfig(payload: {
   return readJson<AITestResponse>(response);
 }
 
-export async function fetchDailyPlan(date: string): Promise<DailyPlanResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/ai/daily-plan/${date}`);
-  return readJson<DailyPlanResponse>(response);
-}
-
-export async function generateDailyPlan(date: string): Promise<DailyPlanResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/ai/daily-plan`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ date }),
-  });
-  return readJson<DailyPlanResponse>(response);
-}
-
-export async function fetchHistoryDays(days = 14): Promise<HistoryDay[]> {
-  const response = await fetch(`${API_BASE_URL}/api/history/days?days=${days}`);
-  return readJson<HistoryDay[]>(response);
-}
-
 export async function fetchRuntimeStatus(): Promise<RuntimeStatus> {
   const response = await fetch(`${API_BASE_URL}/api/runtime/status`);
   return readJson<RuntimeStatus>(response);
@@ -292,6 +286,82 @@ export async function fetchRuntimeStatus(): Promise<RuntimeStatus> {
 export async function stopRuntime(): Promise<{ stopped: boolean; backendStopped: boolean; frontendStopped: boolean }> {
   const response = await fetch(`${API_BASE_URL}/api/runtime/stop`, { method: "POST" });
   return readJson<{ stopped: boolean; backendStopped: boolean; frontendStopped: boolean }>(response);
+}
+
+export async function fetchGoals(): Promise<LearningGoal[]> {
+  const response = await fetch(`${API_BASE_URL}/api/goals`);
+  return readJson<LearningGoal[]>(response);
+}
+
+export async function createGoal(payload: {
+  name: string;
+  description: string;
+  currentFocus: string;
+  active: boolean;
+}): Promise<LearningGoal> {
+  const response = await fetch(`${API_BASE_URL}/api/goals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<LearningGoal>(response);
+}
+
+export async function updateGoal(
+  id: number,
+  payload: Partial<Pick<LearningGoal, "name" | "description" | "currentFocus" | "active">>,
+): Promise<LearningGoal> {
+  const response = await fetch(`${API_BASE_URL}/api/goals/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<LearningGoal>(response);
+}
+
+export async function deleteGoal(id: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/goals/${id}`, { method: "DELETE" });
+  await readJson<{ deleted: boolean }>(response);
+}
+
+export async function generateAISummary(date: string): Promise<AISummaryRecord> {
+  const response = await fetch(`${API_BASE_URL}/api/ai/summary`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ date }),
+  });
+  return readJson<AISummaryRecord>(response);
+}
+
+export async function fetchAISummaries(date: string): Promise<AISummaryRecord[]> {
+  const response = await fetch(`${API_BASE_URL}/api/ai/summary/${date}`);
+  return readJson<AISummaryRecord[]>(response);
+}
+
+export async function generateAIPlan(payload: { date: string; goalId: number }): Promise<AIPlanRecord> {
+  const response = await fetch(`${API_BASE_URL}/api/ai/plan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<AIPlanRecord>(response);
+}
+
+export async function fetchAIPlans(date: string, goalId: number): Promise<AIPlanRecord[]> {
+  const response = await fetch(`${API_BASE_URL}/api/ai/plan/${date}/${goalId}`);
+  return readJson<AIPlanRecord[]>(response);
+}
+
+export async function acceptPlannedTask(planId: number, suggestionId: number): Promise<{ task: Task }> {
+  const response = await fetch(`${API_BASE_URL}/api/ai/plan/${planId}/accept-task/${suggestionId}`, {
+    method: "POST",
+  });
+  return readJson<{ task: Task }>(response);
+}
+
+export async function fetchDayRecord(date: string): Promise<DayRecord> {
+  const response = await fetch(`${API_BASE_URL}/api/day-record/${date}`);
+  return readJson<DayRecord>(response);
 }
 
 async function readJson<T>(response: Response): Promise<T> {
