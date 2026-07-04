@@ -13,6 +13,9 @@
     "start:local": "powershell -ExecutionPolicy Bypass -File ./start-study-pulse.ps1",
     "build:web": "npm --workspace apps/web run build",
     "check:api": "python -c \"import sys; sys.path.insert(0, 'apps/api'); from app.main import app; print(app.title)\""
+    ,
+    "install:mcp": ".venv\\Scripts\\python.exe -m pip install \"mcp>=1.2,<2.0\"",
+    "mcp:server": ".venv\\Scripts\\python.exe -m apps.mcp.server"
   },
   "engines": {
     "node": ">=20",

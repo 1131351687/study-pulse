@@ -1,0 +1,1 @@
+# StudyPulse MCP server package
