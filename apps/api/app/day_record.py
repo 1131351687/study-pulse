@@ -15,7 +15,7 @@ def build_day_record(target_date: str) -> dict[str, Any]:
     journal = _read_journal(target_date)
     schedule_blocks = _read_schedule_blocks(target_date)
     summaries = _read_ai_summaries(target_date)
-    plans = _read_ai_plans_for_date(target_date)
+    tasks = _read_tasks()
 
     return {
         "date": target_date,
@@ -23,7 +23,7 @@ def build_day_record(target_date: str) -> dict[str, Any]:
         "scheduleBlocks": schedule_blocks,
         "activity": activity,
         "aiSummaries": summaries,
-        "aiPlans": plans,
+        "tasks": tasks,
     }
 
 
@@ -107,69 +107,21 @@ def _read_ai_summaries(target_date: str) -> list[dict[str, Any]]:
     return summaries
 
 
-def _read_ai_plans_for_date(target_date: str) -> list[dict[str, Any]]:
+def _read_tasks() -> list[dict[str, Any]]:
     with get_connection() as connection:
         rows = connection.execute(
-            """
-            SELECT p.id, p.goal_id, g.name AS goal_name, p.provider, p.content_json, p.created_at
-            FROM ai_plans p
-            JOIN learning_goals g ON g.id = p.goal_id
-            WHERE p.date = ?
-            ORDER BY p.id DESC
-            """,
-            (target_date,),
+            "SELECT id, title, completed, planned_for, area, priority, created_at, updated_at FROM tasks WHERE planned_for = 'today' ORDER BY completed ASC, id DESC"
         ).fetchall()
-        plan_ids = [int(row["id"]) for row in rows]
-        suggestions_by_plan = _read_plan_suggestions(connection, plan_ids)
-    plans: list[dict[str, Any]] = []
-    for row in rows:
-        try:
-            result = json.loads(row["content_json"])
-        except json.JSONDecodeError:
-            result = {}
-        plan_id = int(row["id"])
-        plans.append(
-            {
-                "id": plan_id,
-                "goalId": row["goal_id"],
-                "goalName": row["goal_name"],
-                "provider": row["provider"],
-                "result": {
-                    **result,
-                    "suggestedTasks": suggestions_by_plan.get(plan_id, []),
-                },
-                "createdAt": row["created_at"],
-            }
-        )
-    return plans
-
-
-def _read_plan_suggestions(connection: Any, plan_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
-    if not plan_ids:
-        return {}
-    placeholders = ",".join("?" for _ in plan_ids)
-    rows = connection.execute(
-        f"""
-        SELECT id, plan_id, title, reason, planned_for, accepted, accepted_task_id, created_at
-        FROM ai_plan_suggested_tasks
-        WHERE plan_id IN ({placeholders})
-        ORDER BY id ASC
-        """,
-        plan_ids,
-    ).fetchall()
-
-    suggestions: dict[int, list[dict[str, Any]]] = {}
-    for row in rows:
-        plan_id = int(row["plan_id"])
-        suggestions.setdefault(plan_id, []).append(
-            {
-                "id": row["id"],
-                "title": row["title"],
-                "reason": row["reason"],
-                "plannedFor": row["planned_for"],
-                "accepted": bool(row["accepted"]),
-                "acceptedTaskId": row["accepted_task_id"],
-                "createdAt": row["created_at"],
-            }
-        )
-    return suggestions
+    return [
+        {
+            "id": row["id"],
+            "title": row["title"],
+            "completed": bool(row["completed"]),
+            "plannedFor": row["planned_for"],
+            "area": row["area"],
+            "priority": row["priority"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        }
+        for row in rows
+    ]

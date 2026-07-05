@@ -2,7 +2,7 @@
 
 StudyPulse is a local-first learning workspace. It is designed to combine computer usage data from ActivityWatch, a daily learning journal, lightweight tasks, schedule blocks, and configurable AI providers to produce daily and weekly learning plans.
 
-The project is currently at `v0.4`: a local workspace with ActivityWatch aggregation, SQLite persistence, journals, tasks, schedule blocks, and mock-first AI daily planning.
+The project is currently at `v0.5`: AI planning directly creates tasks, schedule view shows daily tasks, ActivityWatch localhost fallback and improved error handling, streamlined navigation.
 
 ## Current Scope
 
@@ -10,30 +10,29 @@ Implemented so far:
 
 - Local FastAPI API app.
 - Health endpoint at `GET /api/health`.
-- Public settings placeholder at `GET /api/settings`.
 - React/Vite frontend app shell.
-- Navigation for Today, Journal, Tasks, Schedule, AI Config, and Settings.
+- Navigation for Today, 日程记录 (Schedule Record), Tasks, Goals, AI Summary, AI Planning, 今日日志 (Today's Journal), AI Config, and Settings.
 - Chinese/English interface language toggle.
-- Dedicated History page for past daily progress.
-- Dedicated AI Plan page for per-day generation and review.
 - Frontend health badge that checks whether the backend is online.
-- ActivityWatch today aggregation at `GET /api/activity/today`.
+- ActivityWatch aggregation at `GET /api/activity/today` with localhost fallback.
 - SQLite database stored at `data/study-pulse.sqlite` by default.
 - Daily journal save/load.
 - Task create, complete, and delete.
 - Schedule block create and delete.
 - Daily AI summary and next-day plan generation at `POST /api/ai/daily-plan`.
-- Saved generated plan lookup at `GET /api/ai/daily-plan/{date}`.
-- AI provider settings page for `mock`, OpenAI-compatible APIs, and Ollama.
+- AI provider settings page for `mock`, OpenAI-compatible APIs, DeepSeek, and Ollama.
 - AI provider connectivity test endpoint and UI button.
+- AI goal planning that directly creates tasks (`POST /api/ai/plan`).
+- Day record endpoint (`GET /api/day-record/{date}`) aggregating journal, schedule, activity, AI summaries, and tasks.
 - Runtime status panel and stop controls in the web UI.
 - One-command local startup script at `start-study-pulse.ps1`.
+- Built-in MCP server for external AI client integration (Claude Desktop, Cursor, Codex).
 
 Not implemented yet:
 
-- Weekly plan generation.
-- One-click apply for AI suggestions.
-- Advanced editing, filtering, and calendar sync.
+- Weekly review and plan generation.
+- Calendar view for schedule blocks.
+- Advanced editing, filtering, and task dependencies.
 
 ## Requirements
 
@@ -151,10 +150,14 @@ npm run build:web
 - `v0.2`: ActivityWatch aggregation and Today usage summary.
 - `v0.3`: Journal, tasks, schedule, and SQLite persistence.
 - `v0.4`: AI summary and next-day plan generation.
-- `v0.5`: Weekly review and open-source polish.
+- `v0.5`: AI planning→tasks direct flow, schedule task display, ActivityWatch fallback, MCP server.
+- `v0.6`: Weekly review and calendar view.
+- `v0.7`: Open-source polish, packaging, and documentation.
 
 ## Documentation
 
+- Usage guide (Chinese): `docs/USAGE.md`
+- Changelog: `docs/CHANGELOG.md`
 - Design spec: `docs/superpowers/specs/2026-07-03-study-pulse-design.md`
 - v0.1 plan: `docs/superpowers/plans/2026-07-03-v0.1-local-runnable-skeleton-plan.md`
 - v0.2 plan: `docs/superpowers/plans/2026-07-03-v0.2-activitywatch-aggregation-plan.md`

@@ -39,7 +39,7 @@ StudyPulse 是一个本地优先的学习工作台。它把以下几个数据源
 
 ### 可选软件
 
-- ActivityWatch：从 https://activitywatch.net 下载安装。安装后启动它，StudyPulse 会自动连接 http://localhost:5600 读取数据。如果不安装 ActivityWatch，其他功能仍然可用，只是没有屏幕使用时间数据。
+- ActivityWatch：从 https://activitywatch.net 下载安装。安装后启动它，StudyPulse 会自动连接 http://127.0.0.1:5600 读取数据，并在本机 localhost 与 127.0.0.1 之间自动回退。如果不安装 ActivityWatch，其他功能仍然可用，只是没有屏幕使用时间数据。
 
 ### 安装依赖
 
@@ -123,19 +123,19 @@ npm run dev:web
 
 快速查看今天的屏幕使用概览：总记录时长、活跃桶数、常用应用和窗口标题。页面底部还有后端运行状态和退出按钮。
 
-### 日程（Schedule）
+### 日程记录（Schedule）
 
 这是核心页面，按日期浏览完整的学习日常记录。选择任意日期后可以看到：
 
 - 时间块：该日期的日程安排，可以添加和删除。
+- 今日任务：该日期的任务列表及完成状态，支持勾选完成和删除。
 - ActivityWatch 汇总：该日期的屏幕使用数据。
 - 日志：该日期的学习日志，可以直接编辑保存。
 - AI 总结：该日期已生成的 AI 总结（如果有）。
-- AI 规划：该日期已生成的 AI 规划（如果有）。
 
 ### 任务（Tasks）
 
-今日任务工作台。可以添加今日任务、勾选完成、删除。从 AI 规划接受的建议任务也会出现在这里。
+今日任务工作台。可以添加今日任务、勾选完成、删除。AI 规划创建的任务也会出现在这里。你还可以在"日程记录"页面按日期查看任务及完成状态。
 
 ### 学习目标（Goals）
 
@@ -155,15 +155,9 @@ npm run dev:web
 
 ### AI 规划（AI Planning）
 
-选择一个学习目标和日期后点击"生成 AI 规划"，AI 会根据目标、最近 7 天的学习记录和历史 AI 总结生成：
+选择一个学习目标和日期后点击"生成 AI 规划"，AI 会根据目标、最近 7 天的学习记录生成今日计划和建议任务。所有今日任务会直接写入任务列表，你可以在"任务"页面查看和管理，也可以在"日程记录"页面看到它们和完成状态。
 
-- 今日计划
-- 本周计划
-- 建议任务（可逐条点击"加入今日任务"）
-
-建议任务不会自动添加，只有你手动点击接受后才会写入任务列表。
-
-### 日志（Journal）
+### 今日日志（Journal）
 
 独立的日志编辑页面，按日期编辑每日学习日志。
 
@@ -229,7 +223,7 @@ npm run install:api
 ------|------|
 | read_journal | 读取某天的学习日志 |
 | write_journal | 写入某天的学习日志 |
-| read_day_record | 读取某天的完整学习记录（日志、日程、ActivityWatch、AI 总结、AI 规划） |
+| read_day_record | 读取某天的完整学习记录（日志、日程、ActivityWatch、AI 总结、任务） |
 | list_recent_records | 列出最近 N 天的学习记录 |
 | list_goals | 列出所有学习目标 |
 | create_goal | 创建新的学习目标 |
@@ -304,7 +298,7 @@ npm run mcp:server
 
 ### ActivityWatch 数据不显示
 
-确认 ActivityWatch 已经启动，浏览器访问 http://localhost:5600 能打开。StudyPulse 默认连接这个地址。如果你的 ActivityWatch 运行在其他地址，可以通过环境变量 STUDY_PULSE_ACTIVITYWATCH_URL 修改。
+确认 ActivityWatch 已经启动，浏览器访问 http://127.0.0.1:5600 能打开。StudyPulse 默认连接这个地址，并会自动尝试 localhost 回退。如果你的 ActivityWatch 运行在其他地址，可以通过环境变量 STUDY_PULSE_ACTIVITYWATCH_URL 修改，修改后需要重启后端。
 
 ### AI 测试连接返回 403 或 Cloudflare 错误
 

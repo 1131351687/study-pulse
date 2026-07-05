@@ -162,6 +162,13 @@ def read_summaries(date: str) -> list[dict[str, Any]]:
     ]
 
 
+@router.delete("/ai/summary-record/{summary_id}")
+def delete_summary(summary_id: int) -> dict[str, bool]:
+    with get_connection() as connection:
+        cursor = connection.execute("DELETE FROM ai_summaries WHERE id = ?", (summary_id,))
+    return {"deleted": cursor.rowcount > 0}
+
+
 @router.post("/ai/plan")
 def generate_goal_plan(payload: GoalPlanRequest) -> dict[str, Any]:
     config = read_ai_config()
@@ -196,69 +203,35 @@ def generate_goal_plan(payload: GoalPlanRequest) -> dict[str, Any]:
             )
         )
 
-    plan_id, _created_at = _save_goal_plan(target_date, payload.goalId, config.provider, result)
-    plan = _read_plan_record(plan_id)
-    if plan is None:
-        raise HTTPException(status_code=500, detail="Generated plan could not be reloaded.")
-    return plan
-
-
-@router.get("/ai/plan/{date}/{goal_id}")
-def read_goal_plans(date: str, goal_id: int) -> list[dict[str, Any]]:
+    created_tasks: list[dict[str, Any]] = []
+    goal_name = goal["name"]
     with get_connection() as connection:
-        rows = connection.execute(
-            "SELECT id, date, goal_id, provider, content_json, created_at FROM ai_plans WHERE date = ? AND goal_id = ? ORDER BY id DESC",
-            (date, goal_id),
-        ).fetchall()
-    plan_ids = [int(row["id"]) for row in rows]
-    suggestions_by_plan = _read_plan_suggestions(plan_ids)
-    return [_plan_row_to_response(row, suggestions_by_plan.get(int(row["id"]), [])) for row in rows]
-
-
-@router.post("/ai/plan/{plan_id}/accept-task/{suggestion_id}")
-def accept_suggested_task(plan_id: int, suggestion_id: int) -> dict[str, Any]:
-    with get_connection() as connection:
-        suggestion = connection.execute(
-            """
-            SELECT s.id, s.title, s.reason, s.planned_for, s.accepted, s.accepted_task_id, p.goal_id, g.name AS goal_name
-            FROM ai_plan_suggested_tasks s
-            JOIN ai_plans p ON p.id = s.plan_id
-            JOIN learning_goals g ON g.id = p.goal_id
-            WHERE s.id = ? AND s.plan_id = ?
-            """,
-            (suggestion_id, plan_id),
-        ).fetchone()
-        if suggestion is None:
-            raise HTTPException(status_code=404, detail="Suggested task not found.")
-        if suggestion["accepted"]:
-            raise HTTPException(status_code=400, detail="Suggested task has already been accepted.")
-        cursor = connection.execute(
-            """
-            INSERT INTO tasks (title, planned_for, area, priority, updated_at)
-            VALUES (?, ?, ?, 'normal', CURRENT_TIMESTAMP)
-            """,
-            (suggestion["title"], suggestion["planned_for"], suggestion["goal_name"]),
-        )
-        task_row = connection.execute(
-            "SELECT id, title, completed, planned_for, area, priority, created_at, updated_at FROM tasks WHERE id = ?",
-            (cursor.lastrowid,),
-        ).fetchone()
-        connection.execute(
-            "UPDATE ai_plan_suggested_tasks SET accepted = 1, accepted_task_id = ? WHERE id = ?",
-            (cursor.lastrowid, suggestion_id),
-        )
-    return {
-        "task": {
-            "id": task_row["id"],
-            "title": task_row["title"],
-            "completed": bool(task_row["completed"]),
-            "plannedFor": task_row["planned_for"],
-            "area": task_row["area"],
-            "priority": task_row["priority"],
-            "createdAt": task_row["created_at"],
-            "updatedAt": task_row["updated_at"],
-        }
-    }
+        for task in result.get("suggestedTasks", []):
+            planned_for = str(task.get("plannedFor") or "today")
+            if planned_for != "today":
+                continue
+            title = str(task.get("title") or "").strip()
+            if not title:
+                continue
+            cursor = connection.execute(
+                "INSERT INTO tasks (title, planned_for, area, priority, updated_at) VALUES (?, 'today', ?, 'normal', CURRENT_TIMESTAMP)",
+                (title, goal_name),
+            )
+            task_row = connection.execute(
+                "SELECT id, title, completed, planned_for, area, priority, created_at, updated_at FROM tasks WHERE id = ?",
+                (cursor.lastrowid,),
+            ).fetchone()
+            created_tasks.append({
+                "id": task_row["id"],
+                "title": task_row["title"],
+                "completed": bool(task_row["completed"]),
+                "plannedFor": task_row["planned_for"],
+                "area": task_row["area"],
+                "priority": task_row["priority"],
+                "createdAt": task_row["created_at"],
+                "updatedAt": task_row["updated_at"],
+            })
+    return {"tasks": created_tasks}
 
 
 @router.get("/ai/daily-plan/{date}")
@@ -301,88 +274,6 @@ def _save_summary(target_date: str, provider: str, result: dict[str, Any]) -> tu
         )
         row = connection.execute("SELECT id, created_at FROM ai_summaries WHERE id = ?", (cursor.lastrowid,)).fetchone()
     return int(row["id"]), str(row["created_at"])
-
-
-def _save_goal_plan(target_date: str, goal_id: int, provider: str, result: dict[str, Any]) -> tuple[int, str]:
-    with get_connection() as connection:
-        cursor = connection.execute(
-            "INSERT INTO ai_plans (date, goal_id, provider, content_json) VALUES (?, ?, ?, ?)",
-            (target_date, goal_id, provider, json.dumps(result, ensure_ascii=False)),
-        )
-        plan_id = int(cursor.lastrowid)
-        for task in result.get("suggestedTasks", []):
-            connection.execute(
-                """
-                INSERT INTO ai_plan_suggested_tasks (plan_id, title, reason, planned_for)
-                VALUES (?, ?, ?, ?)
-                """,
-                (plan_id, str(task.get("title") or ""), str(task.get("reason") or ""), str(task.get("plannedFor") or "today")),
-            )
-        row = connection.execute("SELECT id, created_at FROM ai_plans WHERE id = ?", (plan_id,)).fetchone()
-    return int(row["id"]), str(row["created_at"])
-
-
-def _read_plan_record(plan_id: int) -> dict[str, Any] | None:
-    with get_connection() as connection:
-        row = connection.execute(
-            "SELECT id, date, goal_id, provider, content_json, created_at FROM ai_plans WHERE id = ?",
-            (plan_id,),
-        ).fetchone()
-    if row is None:
-        return None
-    suggestions = _read_plan_suggestions([plan_id]).get(plan_id, [])
-    return _plan_row_to_response(row, suggestions)
-
-
-def _read_plan_suggestions(plan_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
-    if not plan_ids:
-        return {}
-    placeholders = ",".join("?" for _ in plan_ids)
-    with get_connection() as connection:
-        rows = connection.execute(
-            f"""
-            SELECT id, plan_id, title, reason, planned_for, accepted, accepted_task_id, created_at
-            FROM ai_plan_suggested_tasks
-            WHERE plan_id IN ({placeholders})
-            ORDER BY id ASC
-            """,
-            plan_ids,
-        ).fetchall()
-
-    suggestions: dict[int, list[dict[str, Any]]] = {}
-    for row in rows:
-        plan_id = int(row["plan_id"])
-        suggestions.setdefault(plan_id, []).append(
-            {
-                "id": row["id"],
-                "title": row["title"],
-                "reason": row["reason"],
-                "plannedFor": row["planned_for"],
-                "accepted": bool(row["accepted"]),
-                "acceptedTaskId": row["accepted_task_id"],
-                "createdAt": row["created_at"],
-            }
-        )
-    return suggestions
-
-
-def _plan_row_to_response(row: Any, suggestions: list[dict[str, Any]]) -> dict[str, Any]:
-    try:
-        result = json.loads(row["content_json"])
-    except json.JSONDecodeError:
-        result = {}
-
-    return {
-        "id": row["id"],
-        "date": row["date"],
-        "goalId": row["goal_id"],
-        "provider": row["provider"],
-        "result": {
-            **result,
-            "suggestedTasks": suggestions,
-        },
-        "createdAt": row["created_at"],
-    }
 
 
 def _normalize_summary(payload: dict[str, Any]) -> dict[str, Any]:

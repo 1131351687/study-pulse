@@ -3,12 +3,16 @@ from __future__ import annotations
 import json
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from urllib.request import Request, build_opener, getproxies, ProxyHandler, urlopen
 
 
 DEFAULT_HTTP_HEADERS = {
     "User-Agent": "StudyPulse/0.1 (+https://github.com/1131351687/study-pulse)",
 }
+
+DIRECT_OPENER = build_opener(ProxyHandler({}))
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
 class AIProvider(Protocol):
@@ -232,25 +236,43 @@ def _post_json(
     timeout_seconds: float = 45,
 ) -> dict[str, Any]:
     body = json.dumps(payload).encode("utf-8")
-    request = Request(
-        url,
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            **DEFAULT_HTTP_HEADERS,
-            **headers,
-        },
-        method="POST",
-    )
-    try:
-        with urlopen(request, timeout=timeout_seconds) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")[:500]
-        raise ValueError(f"AI provider request failed: HTTP {error.code} {error.reason}. {detail}") from error
-    except (URLError, TimeoutError, OSError) as error:
-        raise ValueError(f"AI provider request failed: {error}") from error
+    errors: list[tuple[str, Exception]] = []
+
+    for mode in _request_modes(url):
+        request = Request(
+            url,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                **DEFAULT_HTTP_HEADERS,
+                **headers,
+            },
+            method="POST",
+        )
+        try:
+            opener = DIRECT_OPENER.open if mode == "direct" else urlopen
+            with opener(request, timeout=timeout_seconds) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")[:500]
+            raise ValueError(f"AI provider request failed: HTTP {error.code} {error.reason}. {detail}") from error
+        except (URLError, TimeoutError, OSError) as error:
+            errors.append((mode, error))
+
+    if errors:
+        detail = "; ".join(f"{mode}: {error}" for mode, error in errors)
+        raise ValueError(f"AI provider request failed after trying {detail}") from errors[-1][1]
+    raise ValueError("AI provider request failed: no request mode was available.")
+
+
+def _request_modes(url: str) -> list[str]:
+    hostname = (urlsplit(url).hostname or "").lower()
+    has_proxy = bool(getproxies())
+
+    if hostname in LOCAL_HOSTS:
+        return ["direct", "system"] if has_proxy else ["direct"]
+    return ["system", "direct"] if has_proxy else ["system"]
 
 
 def _parse_json_content(content: str) -> dict[str, Any]:

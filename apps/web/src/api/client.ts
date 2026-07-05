@@ -115,38 +115,13 @@ export type AISummaryRecord = {
   createdAt: string;
 };
 
-export type AIPlannedTask = {
-  id: number;
-  title: string;
-  reason: string;
-  plannedFor: string;
-  accepted: boolean;
-  acceptedTaskId: number | null;
-  createdAt: string;
-};
-
-export type AIPlanResult = {
-  todayPlan: string[];
-  weekPlan: string[];
-  suggestedTasks: AIPlannedTask[];
-};
-
-export type AIPlanRecord = {
-  id: number;
-  date: string;
-  goalId: number;
-  provider: string;
-  result: AIPlanResult;
-  createdAt: string;
-};
-
 export type DayRecord = {
   date: string;
   journal: Journal;
   scheduleBlocks: Omit<ScheduleBlock, "date">[];
   activity: TodayActivityResponse;
   aiSummaries: AISummaryRecord[];
-  aiPlans: Array<AIPlanRecord & { goalName?: string }>;
+  tasks: Task[];
 };
 
 export async function fetchHealth(): Promise<HealthResponse> {
@@ -338,25 +313,18 @@ export async function fetchAISummaries(date: string): Promise<AISummaryRecord[]>
   return readJson<AISummaryRecord[]>(response);
 }
 
-export async function generateAIPlan(payload: { date: string; goalId: number }): Promise<AIPlanRecord> {
+export async function deleteAISummary(id: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/ai/summary-record/${id}`, { method: "DELETE" });
+  await readJson<{ deleted: boolean }>(response);
+}
+
+export async function generateAIPlan(payload: { date: string; goalId: number }): Promise<{ tasks: Task[] }> {
   const response = await fetch(`${API_BASE_URL}/api/ai/plan`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return readJson<AIPlanRecord>(response);
-}
-
-export async function fetchAIPlans(date: string, goalId: number): Promise<AIPlanRecord[]> {
-  const response = await fetch(`${API_BASE_URL}/api/ai/plan/${date}/${goalId}`);
-  return readJson<AIPlanRecord[]>(response);
-}
-
-export async function acceptPlannedTask(planId: number, suggestionId: number): Promise<{ task: Task }> {
-  const response = await fetch(`${API_BASE_URL}/api/ai/plan/${planId}/accept-task/${suggestionId}`, {
-    method: "POST",
-  });
-  return readJson<{ task: Task }>(response);
+  return readJson<{ tasks: Task[] }>(response);
 }
 
 export async function fetchDayRecord(date: string): Promise<DayRecord> {

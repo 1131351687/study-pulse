@@ -18,15 +18,12 @@ import {
 } from "lucide-react";
 
 import {
-  acceptPlannedTask,
   createGoal,
-  createScheduleBlock,
   createTask,
+  deleteAISummary,
   deleteGoal,
-  deleteScheduleBlock,
   deleteTask,
   fetchAIConfig,
-  fetchAIPlans,
   fetchAISummaries,
   fetchDayRecord,
   fetchGoals,
@@ -46,7 +43,6 @@ import {
   updateTask,
   type ActivityEntry,
   type AIConfig,
-  type AIPlanRecord,
   type AIProviderName,
   type AISummaryRecord,
   type DayRecord,
@@ -57,7 +53,6 @@ import {
   type Priority,
   type PublicSettings,
   type RuntimeStatus,
-  type ScheduleBlock,
   type Task,
   type TodayActivityResponse,
 } from "./api/client";
@@ -83,12 +78,12 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { id: "today", zh: "今日", en: "Today", icon: LayoutDashboard },
-  { id: "schedule", zh: "日程", en: "Schedule", icon: CalendarDays },
+  { id: "schedule", zh: "日程记录", en: "Schedule Record", icon: CalendarDays },
   { id: "tasks", zh: "任务", en: "Tasks", icon: CheckSquare },
   { id: "goals", zh: "学习目标", en: "Goals", icon: Target },
   { id: "aiSummary", zh: "AI 总结", en: "AI Summary", icon: Sparkles },
   { id: "aiPlanning", zh: "AI 规划", en: "AI Planning", icon: ClipboardList },
-  { id: "journal", zh: "日志", en: "Journal", icon: BookOpen },
+  { id: "journal", zh: "今日日志", en: "Today's Journal", icon: BookOpen },
   { id: "aiConfig", zh: "AI 配置", en: "AI Config", icon: Bot },
   { id: "settings", zh: "设置", en: "Settings", icon: Settings },
 ];
@@ -103,6 +98,7 @@ export function App() {
   const [view, setView] = useState<ViewId>("today");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
+  const [tasksVersion, setTasksVersion] = useState(0);
 
   useEffect(() => {
     localStorage.setItem(languageStorageKey, language);
@@ -166,10 +162,10 @@ export function App() {
 
         {view === "today" && <TodayView language={language} />}
         {view === "schedule" && <ScheduleView language={language} />}
-        {view === "tasks" && <TasksView language={language} />}
+        {view === "tasks" && <TasksView language={language} tasksVersion={tasksVersion} />}
         {view === "goals" && <GoalsView language={language} />}
         {view === "aiSummary" && <AISummaryView language={language} />}
-        {view === "aiPlanning" && <AIPlanningView language={language} />}
+        {view === "aiPlanning" && <AIPlanningView language={language} onTaskAccepted={() => setTasksVersion((v) => v + 1)} />}
         {view === "journal" && <JournalView language={language} />}
         {view === "aiConfig" && <AIConfigView language={language} />}
         {view === "settings" && <SettingsView language={language} />}
@@ -256,27 +252,13 @@ function ScheduleView({ language }: { language: Language }) {
   const [record, setRecord] = useState<DayRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const [newStart, setNewStart] = useState("09:00");
-  const [newEnd, setNewEnd] = useState("10:30");
-  const [newTitle, setNewTitle] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-
-  const [journalDraft, setJournalDraft] = useState("");
-  const [savingJournal, setSavingJournal] = useState(false);
-  const [journalSavedAt, setJournalSavedAt] = useState("");
-  const [journalError, setJournalError] = useState<string | null>(null);
+  const [deletingSummaryId, setDeletingSummaryId] = useState<number | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
     fetchDayRecord(date)
-      .then((data) => {
-        setRecord(data);
-        setJournalDraft(data.journal.content);
-        setJournalSavedAt(data.journal.updatedAt);
-      })
+      .then(setRecord)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load day record"))
       .finally(() => setLoading(false));
   }, [date]);
@@ -285,34 +267,23 @@ function ScheduleView({ language }: { language: Language }) {
     load();
   }, [load]);
 
-  const handleCreateBlock = (event: FormEvent) => {
-    event.preventDefault();
-    const title = newTitle.trim();
-    if (!title) return;
-    setCreating(true);
-    setCreateError(null);
-    createScheduleBlock({ date, startTime: newStart, endTime: newEnd, title })
+  const handleDeleteSummary = (summaryId: number) => {
+    setDeletingSummaryId(summaryId);
+    setError(null);
+    deleteAISummary(summaryId)
       .then(() => {
-        setNewTitle("");
+        setRecord((current) => current ? {
+          ...current,
+          aiSummaries: current.aiSummaries.filter((summary) => summary.id !== summaryId),
+        } : current);
         load();
       })
-      .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : "Failed to create block"))
-      .finally(() => setCreating(false));
-  };
-
-  const handleSaveJournal = () => {
-    setSavingJournal(true);
-    setJournalError(null);
-    saveJournal(date, journalDraft)
-      .then((journal) => {
-        setJournalSavedAt(journal.updatedAt);
-      })
-      .catch((err: unknown) => setJournalError(err instanceof Error ? err.message : "Failed to save journal"))
-      .finally(() => setSavingJournal(false));
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to delete summary"))
+      .finally(() => setDeletingSummaryId(null));
   };
 
   if (loading) {
-    return <p className="status-note">{language === "zh" ? "正在读取日程..." : "Loading schedule..."}</p>;
+    return <p className="status-note">{language === "zh" ? "正在读取日程记录..." : "Loading schedule record..."}</p>;
   }
 
   if (error || !record) {
@@ -334,102 +305,36 @@ function ScheduleView({ language }: { language: Language }) {
         </button>
       </div>
 
-      <div className="content-grid">
-        <Panel title={language === "zh" ? "时间块" : "Schedule Blocks"}>
-          {record.scheduleBlocks.length === 0 ? (
-            <p className="empty-state">{language === "zh" ? "这一天还没有日程块。" : "No schedule blocks for this day."}</p>
-          ) : (
-            <ul className="item-list">
-              {record.scheduleBlocks.map((block) => (
-                <li key={block.id} className="item-row schedule-row">
-                  <strong>{block.startTime} - {block.endTime}</strong>
-                  <span>{block.title}</span>
-                  <button
-                    className="icon-button"
-                    onClick={() => deleteScheduleBlock(block.id).then(load)}
-                    title={language === "zh" ? "删除日程块" : "Delete block"}
-                    type="button"
-                  >
-                    <Trash2 aria-hidden="true" size={16} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <form className="stack-form" onSubmit={handleCreateBlock} style={{ marginTop: 16 }}>
-            <div className="form-grid">
-              <label>
-                {language === "zh" ? "开始" : "Start"}
-                <input type="time" value={newStart} onChange={(e) => setNewStart(e.target.value)} />
-              </label>
-              <label>
-                {language === "zh" ? "结束" : "End"}
-                <input type="time" value={newEnd} onChange={(e) => setNewEnd(e.target.value)} />
-              </label>
-            </div>
-            <label>
-              {language === "zh" ? "标题" : "Title"}
-              <input
-                type="text"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                placeholder={language === "zh" ? "学习 attention" : "Study attention"}
-              />
-            </label>
-            {createError && <p className="status-note warning">{createError}</p>}
-            <div className="form-actions">
-              <button className="primary-button" disabled={creating} type="submit">
-                <Plus aria-hidden="true" size={16} />
-                {language === "zh" ? "添加日程" : "Add Block"}
-              </button>
-            </div>
-          </form>
-        </Panel>
-
-        <Panel title={language === "zh" ? "ActivityWatch 汇总" : "ActivityWatch Summary"}>
-          <p className={activity.available ? "status-note" : "status-note warning"}>{activity.message}</p>
-          <dl className="metric-grid">
-            <div>
-              <dt>{language === "zh" ? "记录时长" : "Tracked Time"}</dt>
-              <dd>{formatDuration(activity.totalSeconds)}</dd>
-            </div>
-            <div>
-              <dt>{language === "zh" ? "桶数" : "Buckets"}</dt>
-              <dd>{activity.bucketCount}</dd>
-            </div>
-            <div>
-              <dt>{language === "zh" ? "常见应用" : "Top Apps"}</dt>
-              <dd>{activity.topApps.length}</dd>
-            </div>
-          </dl>
-          {activity.topApps.length > 0 && (
-            <ActivityList entries={activity.topApps} totalSeconds={activity.totalSeconds} language={language} />
-          )}
-        </Panel>
-      </div>
+      <Panel title={language === "zh" ? "ActivityWatch 汇总" : "ActivityWatch Summary"}>
+        <p className={activity.available ? "status-note" : "status-note warning"}>{activity.message}</p>
+        <dl className="metric-grid">
+          <div>
+            <dt>{language === "zh" ? "记录时长" : "Tracked Time"}</dt>
+            <dd>{formatDuration(activity.totalSeconds)}</dd>
+          </div>
+          <div>
+            <dt>{language === "zh" ? "桶数" : "Buckets"}</dt>
+            <dd>{activity.bucketCount}</dd>
+          </div>
+          <div>
+            <dt>{language === "zh" ? "常见应用" : "Top Apps"}</dt>
+            <dd>{activity.topApps.length}</dd>
+          </div>
+        </dl>
+        {activity.topApps.length > 0 && (
+          <ActivityList entries={activity.topApps} totalSeconds={activity.totalSeconds} language={language} />
+        )}
+      </Panel>
 
       <Panel title={language === "zh" ? "日志" : "Journal"}>
-        <textarea
-          value={journalDraft}
-          onChange={(e) => setJournalDraft(e.target.value)}
-          placeholder={language === "zh" ? "写下今天学了什么、哪里卡住、明天想继续什么。" : "What did you study today?"}
-        />
-        <div className="form-actions" style={{ marginTop: 12 }}>
-          <button className="primary-button" disabled={savingJournal} onClick={handleSaveJournal} type="button">
-            <Save aria-hidden="true" size={16} />
-            {language === "zh" ? "保存日志" : "Save Journal"}
-          </button>
-          <span className="form-status">
-            {journalError ? (
-              <span className="status-note warning">{journalError}</span>
-            ) : journalSavedAt ? (
-              language === "zh" ? `上次保存: ${journalSavedAt}` : `Last saved: ${journalSavedAt}`
-            ) : (
-              language === "zh" ? "这一天还没有日志。" : "No journal for this day."
-            )}
-          </span>
-        </div>
+        {record.journal.content.trim() ? (
+          <p className="readonly-text">{record.journal.content}</p>
+        ) : (
+          <p className="empty-state">{language === "zh" ? "这一天还没有日志。" : "No journal for this day."}</p>
+        )}
+        {record.journal.updatedAt && (
+          <p className="form-status">{language === "zh" ? `上次保存: ${record.journal.updatedAt}` : `Last saved: ${record.journal.updatedAt}`}</p>
+        )}
       </Panel>
 
       <Panel title={language === "zh" ? "AI 总结" : "AI Summaries"}>
@@ -438,28 +343,41 @@ function ScheduleView({ language }: { language: Language }) {
         ) : (
           <div className="ai-plan">
             {record.aiSummaries.map((summary) => (
-              <SummaryCard key={summary.id} summary={summary} language={language} />
+              <SummaryCard
+                key={summary.id}
+                summary={summary}
+                language={language}
+                deleting={deletingSummaryId === summary.id}
+                onDelete={() => handleDeleteSummary(summary.id)}
+              />
             ))}
           </div>
         )}
       </Panel>
 
-      <Panel title={language === "zh" ? "AI 规划" : "AI Plans"}>
-        {record.aiPlans.length === 0 ? (
-          <p className="empty-state">{language === "zh" ? "这一天还没有 AI 规划。" : "No AI plans for this day."}</p>
+      <Panel title={language === "zh" ? "今日任务" : "Today's Tasks"}>
+        {record.tasks.length === 0 ? (
+          <p className="empty-state">{language === "zh" ? "还没有任务。" : "No tasks yet."}</p>
         ) : (
-          <div className="ai-plan">
-            {record.aiPlans.map((plan) => (
-              <PlanCard key={plan.id} plan={plan} language={language} onAccepted={() => load()} />
+          <ul className="item-list">
+            {record.tasks.map((task) => (
+              <li key={task.id} className={`item-row${task.completed ? " done" : ""}`}>
+                <label className="check-label">
+                  <input type="checkbox" checked={task.completed} readOnly />
+                  <span>{task.title}</span>
+                </label>
+                <small>{task.area || "--"} · {task.priority}</small>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </Panel>
+
     </div>
   );
 }
 
-function TasksView({ language }: { language: Language }) {
+function TasksView({ language, tasksVersion }: { language: Language; tasksVersion: number }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -479,7 +397,7 @@ function TasksView({ language }: { language: Language }) {
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, tasksVersion]);
 
   const todayTasks = useMemo(() => tasks.filter((task) => task.plannedFor === "today"), [tasks]);
 
@@ -689,6 +607,7 @@ function AISummaryView({ language }: { language: Language }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [deletingSummaryId, setDeletingSummaryId] = useState<number | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -710,6 +629,18 @@ function AISummaryView({ language }: { language: Language }) {
       .then(() => load())
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to generate summary"))
       .finally(() => setGenerating(false));
+  };
+
+  const handleDelete = (summaryId: number) => {
+    setDeletingSummaryId(summaryId);
+    setError(null);
+    deleteAISummary(summaryId)
+      .then(() => {
+        setSummaries((current) => current.filter((summary) => summary.id !== summaryId));
+        load();
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to delete summary"))
+      .finally(() => setDeletingSummaryId(null));
   };
 
   return (
@@ -738,7 +669,13 @@ function AISummaryView({ language }: { language: Language }) {
       ) : (
         <div className="ai-plan">
           {summaries.map((summary) => (
-            <SummaryCard key={summary.id} summary={summary} language={language} />
+            <SummaryCard
+              key={summary.id}
+              summary={summary}
+              language={language}
+              deleting={deletingSummaryId === summary.id}
+              onDelete={() => handleDelete(summary.id)}
+            />
           ))}
         </div>
       )}
@@ -746,11 +683,11 @@ function AISummaryView({ language }: { language: Language }) {
   );
 }
 
-function AIPlanningView({ language }: { language: Language }) {
+function AIPlanningView({ language, onTaskAccepted }: { language: Language; onTaskAccepted: () => void }) {
   const [goals, setGoals] = useState<LearningGoal[]>([]);
   const [goalId, setGoalId] = useState<number | null>(null);
   const [date, setDate] = useState(todayIso);
-  const [plans, setPlans] = useState<AIPlanRecord[]>([]);
+  const [createdTasks, setCreatedTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -766,34 +703,20 @@ function AIPlanningView({ language }: { language: Language }) {
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load goals"));
   }, [goalId]);
 
-  const loadPlans = useCallback(() => {
-    if (goalId === null) {
-      setPlans([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    fetchAIPlans(date, goalId)
-      .then(setPlans)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load plans"))
-      .finally(() => setLoading(false));
-  }, [date, goalId]);
-
   useEffect(() => {
     loadGoals();
   }, [loadGoals]);
-
-  useEffect(() => {
-    loadPlans();
-  }, [loadPlans]);
 
   const handleGenerate = () => {
     if (goalId === null) return;
     setGenerating(true);
     setError(null);
+    setCreatedTasks([]);
     generateAIPlan({ date, goalId })
-      .then(() => loadPlans())
+      .then((result) => {
+        setCreatedTasks(result.tasks);
+        onTaskAccepted();
+      })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to generate plan"))
       .finally(() => setGenerating(false));
   };
@@ -823,26 +746,32 @@ function AIPlanningView({ language }: { language: Language }) {
         </label>
         <button className="primary-button" disabled={generating || goalId === null} onClick={handleGenerate} type="button">
           <Sparkles aria-hidden="true" size={16} />
-          {language === "zh" ? "生成 AI 规划" : "Generate Plan"}
-        </button>
-        <button className="secondary-button" onClick={loadPlans} type="button">
-          <RefreshCw aria-hidden="true" size={16} />
-          {language === "zh" ? "刷新" : "Refresh"}
+          {generating
+            ? (language === "zh" ? "生成中..." : "Generating...")
+            : (language === "zh" ? "生成 AI 规划" : "Generate Plan")}
         </button>
       </div>
 
       {error && <p className="status-note warning">{error}</p>}
 
       {loading ? (
-        <p className="status-note">{language === "zh" ? "正在读取 AI 规划..." : "Loading plans..."}</p>
-      ) : plans.length === 0 ? (
-        <p className="empty-state">{language === "zh" ? "还没有 AI 规划。" : "No AI plans yet."}</p>
+        <p className="status-note">{language === "zh" ? "正在读取目标..." : "Loading goals..."}</p>
+      ) : createdTasks.length > 0 ? (
+        <Panel title={language === "zh" ? `已创建 ${createdTasks.length} 个任务` : `${createdTasks.length} tasks created`}>
+          <ul className="item-list">
+            {createdTasks.map((task) => (
+              <li key={task.id} className={`item-row${task.completed ? " done" : ""}`}>
+                <label className="check-label">
+                  <input type="checkbox" checked={task.completed} readOnly />
+                  <span>{task.title}</span>
+                </label>
+                <small>{task.area || "--"} · {task.priority}</small>
+              </li>
+            ))}
+          </ul>
+        </Panel>
       ) : (
-        <div className="ai-plan">
-          {plans.map((plan) => (
-            <PlanCard key={plan.id} plan={plan} language={language} onAccepted={() => loadPlans()} />
-          ))}
-        </div>
+        <p className="empty-state">{language === "zh" ? "点击上方按钮生成 AI 规划，今日任务将自动创建。" : "Click Generate to create today's tasks with AI."}</p>
       )}
     </div>
   );
@@ -1167,13 +1096,36 @@ function RuntimeCard({
   );
 }
 
-function SummaryCard({ summary, language }: { summary: AISummaryRecord; language: Language }) {
+function SummaryCard({
+  summary,
+  language,
+  deleting = false,
+  onDelete,
+}: {
+  summary: AISummaryRecord;
+  language: Language;
+  deleting?: boolean;
+  onDelete?: () => void;
+}) {
   const result = summary.result;
   return (
     <div className="ai-section">
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <strong>{language === "zh" ? "评分" : "Score"}: {summary.score}</strong>
-        <small>{summary.provider} · {summary.createdAt}</small>
+      <div className="section-heading-row">
+        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+          <strong>{language === "zh" ? "评分" : "Score"}: {summary.score}</strong>
+          <small>{summary.provider} · {summary.createdAt}</small>
+        </div>
+        {onDelete && (
+          <button
+            className="icon-button"
+            disabled={deleting}
+            onClick={onDelete}
+            title={language === "zh" ? "删除 AI 总结" : "Delete AI summary"}
+            type="button"
+          >
+            <Trash2 aria-hidden="true" size={16} />
+          </button>
+        )}
       </div>
       <p className="summary-text">{result.summary}</p>
       {result.strengths.length > 0 && (
@@ -1198,81 +1150,6 @@ function SummaryCard({ summary, language }: { summary: AISummaryRecord; language
           <ol className="plain-list compact-list">
             {result.improvements.map((item, index) => <li key={index}>{item}</li>)}
           </ol>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PlanCard({
-  plan,
-  language,
-  onAccepted,
-}: {
-  plan: AIPlanRecord;
-  language: Language;
-  onAccepted: () => void;
-}) {
-  const result = plan.result;
-  const [accepting, setAccepting] = useState<number | null>(null);
-
-  const handleAccept = (suggestionId: number) => {
-    setAccepting(suggestionId);
-    acceptPlannedTask(plan.id, suggestionId)
-      .then(() => onAccepted())
-      .catch(() => {
-        // error handled by reload
-      })
-      .finally(() => setAccepting(null));
-  };
-
-  return (
-    <div className="ai-section">
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <small>{plan.provider} · {plan.createdAt}</small>
-      </div>
-      {result.todayPlan.length > 0 && (
-        <div className="ai-section">
-          <h4>{language === "zh" ? "今日计划" : "Today Plan"}</h4>
-          <ol className="plain-list compact-list">
-            {result.todayPlan.map((item, index) => <li key={index}>{item}</li>)}
-          </ol>
-        </div>
-      )}
-      {result.weekPlan.length > 0 && (
-        <div className="ai-section">
-          <h4>{language === "zh" ? "本周计划" : "Week Plan"}</h4>
-          <ol className="plain-list compact-list">
-            {result.weekPlan.map((item, index) => <li key={index}>{item}</li>)}
-          </ol>
-        </div>
-      )}
-      {result.suggestedTasks.length > 0 && (
-        <div className="ai-section">
-          <h4>{language === "zh" ? "建议任务" : "Suggested Tasks"}</h4>
-          <ul className="suggestion-list">
-            {result.suggestedTasks.map((task) => (
-              <li key={task.id}>
-                <strong>{task.title}</strong>
-                <span>{task.reason}</span>
-                {task.accepted ? (
-                  <span className="tag-list">
-                    <span>{language === "zh" ? "已加入" : "Accepted"}</span>
-                  </span>
-                ) : (
-                  <button
-                    className="secondary-button"
-                    disabled={accepting === task.id}
-                    onClick={() => handleAccept(task.id)}
-                    type="button"
-                  >
-                    <Plus aria-hidden="true" size={14} />
-                    {language === "zh" ? "加入今日任务" : "Accept"}
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
         </div>
       )}
     </div>

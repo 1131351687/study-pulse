@@ -6,8 +6,8 @@ from datetime import date as date_type, datetime, time, timedelta
 import json
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
+from urllib.parse import quote, urlencode, urlsplit, urlunsplit
+from urllib.request import Request, build_opener, ProxyHandler
 
 
 WATCHED_BUCKET_TYPES = {
@@ -48,6 +48,9 @@ class TodayActivitySummary:
 class ActivityWatchClient:
     def __init__(self, base_url: str, timeout_seconds: float = 5.0) -> None:
         self.base_url = base_url.rstrip("/")
+        self._base_url_candidates = _activitywatch_url_candidates(self.base_url)
+        self._active_base_url = self._base_url_candidates[0]
+        self._opener = build_opener(ProxyHandler({}))
         self.timeout_seconds = timeout_seconds
 
     def today_summary(self) -> TodayActivitySummary:
@@ -102,10 +105,25 @@ class ActivityWatchClient:
             )
 
     def _get_json(self, path: str) -> Any:
-        request = Request(f"{self.base_url}{path}", headers={"Accept": "application/json"})
-        with urlopen(request, timeout=self.timeout_seconds) as response:
-            payload = response.read().decode("utf-8")
-        return json.loads(payload)
+        errors: list[Exception] = []
+        for base_url in self._ordered_base_urls():
+            try:
+                request = Request(f"{base_url}{path}", headers={"Accept": "application/json"})
+                with self._opener.open(request, timeout=self.timeout_seconds) as response:
+                    payload = response.read().decode("utf-8")
+                self._active_base_url = base_url
+                return json.loads(payload)
+            except HTTPError:
+                raise
+            except (URLError, TimeoutError, OSError) as error:
+                errors.append(error)
+
+        if errors:
+            raise errors[-1]
+        raise URLError("No ActivityWatch URL candidates were configured.")
+
+    def _ordered_base_urls(self) -> list[str]:
+        return [self._active_base_url] + [url for url in self._base_url_candidates if url != self._active_base_url]
 
     def _read_events(self, bucket_id: str, start: datetime, end: datetime) -> list[dict[str, Any]]:
         query = urlencode({"start": start.isoformat(), "end": end.isoformat()})
@@ -141,7 +159,7 @@ class ActivityWatchClient:
                 continue
 
             data = event.get("data") if isinstance(event.get("data"), dict) else {}
-            app = self._read_label(data, ["app", "browser", "project", "language"], "Unknown app")
+            app = self._read_label(data, ["app", "application", "browser", "project", "language"], "Unknown app")
             title = self._read_label(data, ["title", "url", "file", "project"], app)
 
             app_seconds[app] += duration
@@ -170,3 +188,31 @@ def _parse_date(value: str) -> date_type:
         return date_type.fromisoformat(value)
     except ValueError:
         return datetime.now().astimezone().date()
+
+
+def _activitywatch_url_candidates(base_url: str) -> list[str]:
+    candidates = [base_url]
+    parsed = urlsplit(base_url)
+    hostname = parsed.hostname or ""
+
+    if hostname.lower() == "localhost":
+        fallback = urlunsplit((parsed.scheme, _replace_host(parsed.netloc, "127.0.0.1"), parsed.path, parsed.query, parsed.fragment))
+        candidates.append(fallback.rstrip("/"))
+    elif hostname == "127.0.0.1":
+        fallback = urlunsplit((parsed.scheme, _replace_host(parsed.netloc, "localhost"), parsed.path, parsed.query, parsed.fragment))
+        candidates.append(fallback.rstrip("/"))
+
+    return list(dict.fromkeys(candidates))
+
+
+def _replace_host(netloc: str, host: str) -> str:
+    if "@" in netloc:
+        userinfo, netloc = netloc.rsplit("@", 1)
+        prefix = f"{userinfo}@"
+    else:
+        prefix = ""
+
+    if ":" in netloc:
+        _, port = netloc.rsplit(":", 1)
+        return f"{prefix}{host}:{port}"
+    return f"{prefix}{host}"

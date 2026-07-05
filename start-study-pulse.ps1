@@ -89,7 +89,7 @@ if (Test-PortOpen 7788) {
     Start-Process powershell.exe -WorkingDirectory $Root -ArgumentList @(
         "-NoExit",
         "-ExecutionPolicy", "Bypass",
-        "-Command", ".\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --app-dir apps/api --host 127.0.0.1 --port 7788"
+        "-Command", ".\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir apps/api --host 127.0.0.1 --port 7788"
     )
 }
 

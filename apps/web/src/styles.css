@@ -540,6 +540,20 @@ textarea {
   line-height: 1.55;
 }
 
+.readonly-text {
+  margin: 0;
+  color: #30463d;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.section-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .tag-list {
   display: flex;
   flex-wrap: wrap;

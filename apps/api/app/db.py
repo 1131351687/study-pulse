@@ -81,29 +81,6 @@ def init_db() -> None:
                 content_json TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
-
-            CREATE TABLE IF NOT EXISTS ai_plans (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT NOT NULL,
-                goal_id INTEGER NOT NULL,
-                provider TEXT NOT NULL,
-                content_json TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(goal_id) REFERENCES learning_goals(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS ai_plan_suggested_tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                plan_id INTEGER NOT NULL,
-                title TEXT NOT NULL,
-                reason TEXT NOT NULL DEFAULT '',
-                planned_for TEXT NOT NULL DEFAULT 'today',
-                accepted INTEGER NOT NULL DEFAULT 0,
-                accepted_task_id INTEGER,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(plan_id) REFERENCES ai_plans(id),
-                FOREIGN KEY(accepted_task_id) REFERENCES tasks(id)
-            );
             """
         )
 
