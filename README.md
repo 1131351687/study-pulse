@@ -1,5 +1,7 @@
 # StudyPulse
 
+> This project is AI-generated. It serves as a local-first learning dashboard for recording daily schedules, journals, and tasks.
+
 StudyPulse is a local-first learning workspace. It combines computer usage data from ActivityWatch, a daily learning journal, tasks with milestones, schedule blocks, and configurable AI providers to produce daily learning plans and summaries.
 
 The project is currently at `v0.6`: AI planning confirm flow, learning goals with milestones, custom AI prompts, date-scoped tasks, and improved schedule record.
