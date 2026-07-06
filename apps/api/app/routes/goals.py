@@ -20,6 +20,17 @@ class GoalUpdate(BaseModel):
     active: bool | None = None
 
 
+class MilestoneCreate(BaseModel):
+    title: str
+    description: str = ""
+
+
+class MilestoneUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    completed: bool | None = None
+
+
 @router.get("/goals")
 def list_goals() -> list[dict]:
     with get_connection() as connection:
@@ -96,6 +107,87 @@ def delete_goal(goal_id: int) -> dict[str, bool]:
         cursor = connection.execute("DELETE FROM learning_goals WHERE id = ?", (goal_id,))
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Goal not found.")
+    return {"deleted": True}
+
+
+# ── 里程碑 CRUD ──────────────────────────────────────
+
+
+@router.get("/goals/{goal_id}/milestones")
+def list_milestones(goal_id: int) -> list[dict]:
+    with get_connection() as connection:
+        rows = connection.execute(
+            "SELECT id, goal_id, title, description, completed, position, created_at, updated_at FROM goal_milestones WHERE goal_id = ? ORDER BY position ASC, id ASC",
+            (goal_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@router.post("/goals/{goal_id}/milestones")
+def create_milestone(goal_id: int, payload: MilestoneCreate) -> dict:
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Milestone title is required.")
+
+    with get_connection() as connection:
+        # 获取下一个 position
+        max_pos = connection.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM goal_milestones WHERE goal_id = ?",
+            (goal_id,),
+        ).fetchone()[0]
+        cursor = connection.execute(
+            "INSERT INTO goal_milestones (goal_id, title, description, position, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+            (goal_id, title, payload.description.strip(), max_pos),
+        )
+        row = connection.execute(
+            "SELECT id, goal_id, title, description, completed, position, created_at, updated_at FROM goal_milestones WHERE id = ?",
+            (cursor.lastrowid,),
+        ).fetchone()
+    return dict(row)
+
+
+@router.patch("/goals/milestones/{milestone_id}")
+def update_milestone(milestone_id: int, payload: MilestoneUpdate) -> dict:
+    updates: list[str] = []
+    values: list[object] = []
+
+    if payload.title is not None:
+        title = payload.title.strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="Milestone title is required.")
+        updates.append("title = ?")
+        values.append(title)
+    if payload.description is not None:
+        updates.append("description = ?")
+        values.append(payload.description)
+    if payload.completed is not None:
+        updates.append("completed = ?")
+        values.append(1 if payload.completed else 0)
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update.")
+
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    values.append(milestone_id)
+
+    with get_connection() as connection:
+        connection.execute(f"UPDATE goal_milestones SET {', '.join(updates)} WHERE id = ?", values)
+        row = connection.execute(
+            "SELECT id, goal_id, title, description, completed, position, created_at, updated_at FROM goal_milestones WHERE id = ?",
+            (milestone_id,),
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Milestone not found.")
+    return dict(row)
+
+
+@router.delete("/goals/milestones/{milestone_id}")
+def delete_milestone(milestone_id: int) -> dict[str, bool]:
+    with get_connection() as connection:
+        cursor = connection.execute("DELETE FROM goal_milestones WHERE id = ?", (milestone_id,))
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Milestone not found.")
     return {"deleted": True}
 
 

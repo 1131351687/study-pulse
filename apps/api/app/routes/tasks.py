@@ -14,14 +14,21 @@ Priority = Literal["low", "normal", "high"]
 class TaskCreate(BaseModel):
     title: str
     plannedFor: PlannedFor = "today"
+    forDate: str | None = None
     area: str = ""
     priority: Priority = "normal"
+
+
+class BatchTaskCreate(BaseModel):
+    tasks: list[TaskCreate]
+    forDate: str
 
 
 class TaskUpdate(BaseModel):
     title: str | None = None
     completed: bool | None = None
     plannedFor: PlannedFor | None = None
+    forDate: str | None = None
     area: str | None = None
     priority: Priority | None = None
 
@@ -31,7 +38,7 @@ def list_tasks() -> list[dict]:
     with get_connection() as connection:
         rows = connection.execute(
             """
-            SELECT id, title, completed, planned_for, area, priority, created_at, updated_at
+            SELECT id, title, completed, planned_for, for_date, area, priority, created_at, updated_at
             FROM tasks
             ORDER BY completed ASC, id DESC
             """
@@ -45,19 +52,42 @@ def create_task(payload: TaskCreate) -> dict:
     if not title:
         raise HTTPException(status_code=400, detail="Task title is required.")
 
+    for_date = payload.forDate or __import__("datetime").date.today().isoformat()
+
     with get_connection() as connection:
         cursor = connection.execute(
             """
-            INSERT INTO tasks (title, planned_for, area, priority, updated_at)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            INSERT INTO tasks (title, planned_for, for_date, area, priority, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
-            (title, payload.plannedFor, payload.area.strip(), payload.priority),
+            (title, payload.plannedFor, for_date, payload.area.strip(), payload.priority),
         )
         row = connection.execute(
-            "SELECT id, title, completed, planned_for, area, priority, created_at, updated_at FROM tasks WHERE id = ?",
+            "SELECT id, title, completed, planned_for, for_date, area, priority, created_at, updated_at FROM tasks WHERE id = ?",
             (cursor.lastrowid,),
         ).fetchone()
     return _task_to_response(dict(row))
+
+
+@router.post("/tasks/batch")
+def batch_create_tasks(payload: BatchTaskCreate) -> list[dict]:
+    created: list[dict] = []
+    for_date = payload.forDate
+    with get_connection() as connection:
+        for task_payload in payload.tasks:
+            title = task_payload.title.strip()
+            if not title:
+                continue
+            cursor = connection.execute(
+                "INSERT INTO tasks (title, planned_for, for_date, area, priority, updated_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                (title, task_payload.plannedFor, for_date, task_payload.area.strip(), task_payload.priority),
+            )
+            row = connection.execute(
+                "SELECT id, title, completed, planned_for, for_date, area, priority, created_at, updated_at FROM tasks WHERE id = ?",
+                (cursor.lastrowid,),
+            ).fetchone()
+            created.append(_task_to_response(dict(row)))
+    return created
 
 
 @router.patch("/tasks/{task_id}")
@@ -77,6 +107,9 @@ def update_task(task_id: int, payload: TaskUpdate) -> dict:
     if payload.plannedFor is not None:
         updates.append("planned_for = ?")
         values.append(payload.plannedFor)
+    if payload.forDate is not None:
+        updates.append("for_date = ?")
+        values.append(payload.forDate)
     if payload.area is not None:
         updates.append("area = ?")
         values.append(payload.area.strip())
@@ -90,13 +123,13 @@ def update_task(task_id: int, payload: TaskUpdate) -> dict:
         with get_connection() as connection:
             connection.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ?", values)
             row = connection.execute(
-                "SELECT id, title, completed, planned_for, area, priority, created_at, updated_at FROM tasks WHERE id = ?",
+                "SELECT id, title, completed, planned_for, for_date, area, priority, created_at, updated_at FROM tasks WHERE id = ?",
                 (task_id,),
             ).fetchone()
     else:
         with get_connection() as connection:
             row = connection.execute(
-                "SELECT id, title, completed, planned_for, area, priority, created_at, updated_at FROM tasks WHERE id = ?",
+                "SELECT id, title, completed, planned_for, for_date, area, priority, created_at, updated_at FROM tasks WHERE id = ?",
                 (task_id,),
             ).fetchone()
 
@@ -120,6 +153,7 @@ def _task_to_response(row: dict) -> dict:
         "title": row["title"],
         "completed": bool(row["completed"]),
         "plannedFor": row["planned_for"],
+        "forDate": row["for_date"],
         "area": row["area"],
         "priority": row["priority"],
         "createdAt": row["created_at"],

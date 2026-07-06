@@ -15,7 +15,7 @@ def build_day_record(target_date: str) -> dict[str, Any]:
     journal = _read_journal(target_date)
     schedule_blocks = _read_schedule_blocks(target_date)
     summaries = _read_ai_summaries(target_date)
-    tasks = _read_tasks()
+    tasks = _read_tasks(target_date)
 
     return {
         "date": target_date,
@@ -107,10 +107,11 @@ def _read_ai_summaries(target_date: str) -> list[dict[str, Any]]:
     return summaries
 
 
-def _read_tasks() -> list[dict[str, Any]]:
+def _read_tasks(target_date: str) -> list[dict[str, Any]]:
     with get_connection() as connection:
         rows = connection.execute(
-            "SELECT id, title, completed, planned_for, area, priority, created_at, updated_at FROM tasks WHERE planned_for = 'today' ORDER BY completed ASC, id DESC"
+            "SELECT id, title, completed, planned_for, for_date, area, priority, created_at, updated_at FROM tasks WHERE for_date = ? ORDER BY completed ASC, id DESC",
+            (target_date,),
         ).fetchall()
     return [
         {
@@ -118,6 +119,7 @@ def _read_tasks() -> list[dict[str, Any]]:
             "title": row["title"],
             "completed": bool(row["completed"]),
             "plannedFor": row["planned_for"],
+            "forDate": row["for_date"],
             "area": row["area"],
             "priority": row["priority"],
             "createdAt": row["created_at"],

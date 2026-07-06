@@ -36,6 +36,7 @@ export type Task = {
   title: string;
   completed: boolean;
   plannedFor: PlannedFor;
+  forDate: string;
   area: string;
   priority: Priority;
   createdAt: string;
@@ -66,6 +67,7 @@ export type AIConfig = {
   model: string;
   sendActivityTitles: boolean;
   hasApiKey: boolean;
+  planningPrompt: string;
 };
 
 export type AITestResponse = {
@@ -98,6 +100,17 @@ export type LearningGoal = {
   updatedAt: string;
 };
 
+export type GoalMilestone = {
+  id: number;
+  goal_id: number;
+  title: string;
+  description: string;
+  completed: boolean;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AISummaryResult = {
   score: number;
   summary: string;
@@ -113,6 +126,20 @@ export type AISummaryRecord = {
   score: number;
   result: AISummaryResult;
   createdAt: string;
+};
+
+export type AISuggestedTask = {
+  title: string;
+  reason: string;
+  plannedFor: PlannedFor;
+  area: string;
+  priority: Priority;
+};
+
+export type AIPlanResult = {
+  todayPlan: string[];
+  weekPlan: string[];
+  suggestedTasks: AISuggestedTask[];
 };
 
 export type DayRecord = {
@@ -161,6 +188,7 @@ export async function fetchTasks(): Promise<Task[]> {
 export async function createTask(payload: {
   title: string;
   plannedFor: PlannedFor;
+  forDate?: string;
   area: string;
   priority: Priority;
 }): Promise<Task> {
@@ -174,7 +202,7 @@ export async function createTask(payload: {
 
 export async function updateTask(
   id: number,
-  payload: Partial<Pick<Task, "title" | "completed" | "plannedFor" | "area" | "priority">>,
+  payload: Partial<Pick<Task, "title" | "completed" | "plannedFor" | "forDate" | "area" | "priority">>,
 ): Promise<Task> {
   const response = await fetch(`${API_BASE_URL}/api/tasks/${id}`, {
     method: "PATCH",
@@ -229,6 +257,7 @@ export async function saveAIConfig(payload: {
   model: string;
   apiKey?: string;
   sendActivityTitles: boolean;
+  planningPrompt?: string;
 }): Promise<AIConfig> {
   const response = await fetch(`${API_BASE_URL}/api/ai/config`, {
     method: "PUT",
@@ -318,13 +347,62 @@ export async function deleteAISummary(id: number): Promise<void> {
   await readJson<{ deleted: boolean }>(response);
 }
 
-export async function generateAIPlan(payload: { date: string; goalId: number }): Promise<{ tasks: Task[] }> {
+export async function generateAIPlan(payload: { date: string; goalId: number }): Promise<AIPlanResult> {
   const response = await fetch(`${API_BASE_URL}/api/ai/plan`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return readJson<{ tasks: Task[] }>(response);
+  return readJson<AIPlanResult>(response);
+}
+
+export async function expandGoalDescription(goalId: number): Promise<LearningGoal> {
+  const response = await fetch(`${API_BASE_URL}/api/ai/expand-description`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ goalId }),
+  });
+  return readJson<LearningGoal>(response);
+}
+
+export async function fetchMilestones(goalId: number): Promise<GoalMilestone[]> {
+  const response = await fetch(`${API_BASE_URL}/api/goals/${goalId}/milestones`);
+  return readJson<GoalMilestone[]>(response);
+}
+
+export async function createMilestone(goalId: number, payload: { title: string; description?: string }): Promise<GoalMilestone> {
+  const response = await fetch(`${API_BASE_URL}/api/goals/${goalId}/milestones`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<GoalMilestone>(response);
+}
+
+export async function updateMilestone(id: number, payload: { title?: string; description?: string; completed?: boolean }): Promise<GoalMilestone> {
+  const response = await fetch(`${API_BASE_URL}/api/goals/milestones/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<GoalMilestone>(response);
+}
+
+export async function deleteMilestone(id: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/goals/milestones/${id}`, { method: "DELETE" });
+  await readJson<{ deleted: boolean }>(response);
+}
+
+export async function batchCreateTasks(payload: {
+  tasks: { title: string; plannedFor: PlannedFor; area: string; priority: Priority }[];
+  forDate: string;
+}): Promise<Task[]> {
+  const response = await fetch(`${API_BASE_URL}/api/tasks/batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<Task[]>(response);
 }
 
 export async function fetchDayRecord(date: string): Promise<DayRecord> {

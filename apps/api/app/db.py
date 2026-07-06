@@ -16,6 +16,25 @@ def get_connection() -> sqlite3.Connection:
 
 def init_db() -> None:
     with get_connection() as connection:
+        # 迁移：为已有数据库添加 for_date 列
+        try:
+            connection.execute("ALTER TABLE tasks ADD COLUMN for_date TEXT")
+            connection.execute("UPDATE tasks SET for_date = date('now') WHERE for_date IS NULL")
+        except Exception:
+            pass  # 列已存在
+
+        # 迁移：添加 planning_prompt 列
+        try:
+            connection.execute("ALTER TABLE ai_config ADD COLUMN planning_prompt TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass  # 列已存在
+
+        # 迁移：添加里程碑描述
+        try:
+            connection.execute("ALTER TABLE goal_milestones ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass  # 列已存在
+
         connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS journals (
@@ -29,6 +48,7 @@ def init_db() -> None:
                 title TEXT NOT NULL,
                 completed INTEGER NOT NULL DEFAULT 0,
                 planned_for TEXT NOT NULL DEFAULT 'today',
+                for_date TEXT NOT NULL DEFAULT (date('now')),
                 area TEXT NOT NULL DEFAULT '',
                 priority TEXT NOT NULL DEFAULT 'normal',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -80,6 +100,17 @@ def init_db() -> None:
                 score INTEGER NOT NULL DEFAULT 0,
                 content_json TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS goal_milestones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                goal_id INTEGER NOT NULL REFERENCES learning_goals(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                completed INTEGER NOT NULL DEFAULT 0,
+                position INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             """
         )

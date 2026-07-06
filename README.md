@@ -1,8 +1,8 @@
 # StudyPulse
 
-StudyPulse is a local-first learning workspace. It is designed to combine computer usage data from ActivityWatch, a daily learning journal, lightweight tasks, schedule blocks, and configurable AI providers to produce daily and weekly learning plans.
+StudyPulse is a local-first learning workspace. It combines computer usage data from ActivityWatch, a daily learning journal, tasks with milestones, schedule blocks, and configurable AI providers to produce daily learning plans and summaries.
 
-The project is currently at `v0.5`: AI planning directly creates tasks, schedule view shows daily tasks, ActivityWatch localhost fallback and improved error handling, streamlined navigation.
+The project is currently at `v0.6`: AI planning confirm flow, learning goals with milestones, custom AI prompts, date-scoped tasks, and improved schedule record.
 
 ## Current Scope
 
@@ -17,21 +17,28 @@ Implemented so far:
 - ActivityWatch aggregation at `GET /api/activity/today` with localhost fallback.
 - SQLite database stored at `data/study-pulse.sqlite` by default.
 - Daily journal save/load.
-- Task create, complete, and delete.
+- Task create, complete, and delete — tasks are scoped by date (`for_date` field).
 - Schedule block create and delete.
 - Daily AI summary and next-day plan generation at `POST /api/ai/daily-plan`.
 - AI provider settings page for `mock`, OpenAI-compatible APIs, DeepSeek, and Ollama.
 - AI provider connectivity test endpoint and UI button.
-- AI goal planning that directly creates tasks (`POST /api/ai/plan`).
-- Day record endpoint (`GET /api/day-record/{date}`) aggregating journal, schedule, activity, AI summaries, and tasks.
+- AI goal planning with **confirm flow**: AI suggests tasks, user reviews and checks which to accept before they are added (`POST /api/ai/plan`).
+- AI planning displays generated todayPlan text alongside suggested tasks.
+- **Custom AI planning prompt** in settings — override how the AI plans your day.
+- Day record endpoint (`GET /api/day-record/{date}`) aggregating journal, schedule, activity, AI summaries, and date-scoped tasks.
+- **Learning goals** with **milestones**: each goal has a milestone list (title + description, add/edit/delete/check), managed via a modal dialog.
+- **AI expand description** for goals — AI generates a detailed learning roadmap from a brief goal description.
 - Runtime status panel and stop controls in the web UI.
 - One-command local startup script at `start-study-pulse.ps1`.
 - Built-in MCP server for external AI client integration (Claude Desktop, Cursor, Codex).
+- Schedule record shows task delete button (togglable in Settings).
+- ActivityWatch title privacy toggle.
 
 Not implemented yet:
 
-- Weekly review and plan generation.
+- Weekly review and weekly plan generation.
 - Calendar view for schedule blocks.
+- Weekly/monthly report generation.
 - Advanced editing, filtering, and task dependencies.
 
 ## Requirements
@@ -151,14 +158,16 @@ npm run build:web
 - `v0.3`: Journal, tasks, schedule, and SQLite persistence.
 - `v0.4`: AI summary and next-day plan generation.
 - `v0.5`: AI planning→tasks direct flow, schedule task display, ActivityWatch fallback, MCP server.
-- `v0.6`: Weekly review and calendar view.
-- `v0.7`: Open-source polish, packaging, and documentation.
+- `v0.6`: AI planning confirm flow, learning goals with milestones, custom AI prompts, date-scoped tasks.
+- `v0.7`: Weekly review, calendar view, and weekly/monthly reports.
+- `v0.8`: Open-source polish, packaging, and documentation.
 
 ## Documentation
 
 - Usage guide (Chinese): `docs/USAGE.md`
 - Changelog: `docs/CHANGELOG.md`
-- Design spec: `docs/superpowers/specs/2026-07-03-study-pulse-design.md`
+- Design spec: `docs/superpowers/specs/2026-07-06-ai-planning-confirm-delete-settings-design.md`
+- Design spec: `docs/superpowers/specs/2026-07-04-study-pulse-ai-goals-schedule-design.md`
 - v0.1 plan: `docs/superpowers/plans/2026-07-03-v0.1-local-runnable-skeleton-plan.md`
 - v0.2 plan: `docs/superpowers/plans/2026-07-03-v0.2-activitywatch-aggregation-plan.md`
 - v0.3 plan: `docs/superpowers/plans/2026-07-03-v0.3-journal-tasks-schedule-plan.md`

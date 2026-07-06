@@ -35,6 +35,12 @@ import {
   fetchTodayActivity,
   generateAISummary,
   generateAIPlan,
+  expandGoalDescription,
+  fetchMilestones,
+  createMilestone,
+  updateMilestone,
+  deleteMilestone,
+  batchCreateTasks,
   saveAIConfig,
   saveJournal,
   stopRuntime,
@@ -44,8 +50,10 @@ import {
   type ActivityEntry,
   type AIConfig,
   type AIProviderName,
+  type AIPlanResult,
   type AISummaryRecord,
   type DayRecord,
+  type GoalMilestone,
   type HealthResponse,
   type Journal,
   type LearningGoal,
@@ -253,6 +261,7 @@ function ScheduleView({ language }: { language: Language }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [deletingSummaryId, setDeletingSummaryId] = useState<number | null>(null);
+  const [deletingTaskId, setDeletingTaskId] = useState<number | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -281,6 +290,17 @@ function ScheduleView({ language }: { language: Language }) {
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to delete summary"))
       .finally(() => setDeletingSummaryId(null));
   };
+
+  const handleDeleteTask = (taskId: number) => {
+    setDeletingTaskId(taskId);
+    setError(null);
+    deleteTask(taskId)
+      .then(() => load())
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to delete task"))
+      .finally(() => setDeletingTaskId(null));
+  };
+
+  const scheduleTaskDeleteEnabled = localStorage.getItem("schedule_task_delete_enabled") !== "false";
 
   if (loading) {
     return <p className="status-note">{language === "zh" ? "正在读取日程记录..." : "Loading schedule record..."}</p>;
@@ -367,6 +387,18 @@ function ScheduleView({ language }: { language: Language }) {
                   <span>{task.title}</span>
                 </label>
                 <small>{task.area || "--"} · {task.priority}</small>
+                {scheduleTaskDeleteEnabled && (
+                  <button
+                    className="icon-button"
+                    disabled={deletingTaskId === task.id}
+                    onClick={() => handleDeleteTask(task.id)}
+                    title={language === "zh" ? "删除任务" : "Delete task"}
+                    type="button"
+                    style={{ marginLeft: "auto" }}
+                  >
+                    <Trash2 aria-hidden="true" size={14} />
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -399,14 +431,14 @@ function TasksView({ language, tasksVersion }: { language: Language; tasksVersio
     load();
   }, [load, tasksVersion]);
 
-  const todayTasks = useMemo(() => tasks.filter((task) => task.plannedFor === "today"), [tasks]);
+  const todayTasks = useMemo(() => tasks.filter((task) => task.forDate === todayIso), [tasks]);
 
   const handleCreate = (event: FormEvent) => {
     event.preventDefault();
     const title = newTitle.trim();
     if (!title) return;
     setCreating(true);
-    createTask({ title, plannedFor: "today", area: newArea.trim(), priority: newPriority })
+    createTask({ title, plannedFor: "today", forDate: todayIso, area: newArea.trim(), priority: newPriority })
       .then(() => {
         setNewTitle("");
         load();
@@ -498,8 +530,17 @@ function GoalsView({ language }: { language: Language }) {
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [currentFocus, setCurrentFocus] = useState("");
   const [creating, setCreating] = useState(false);
+  const [expanding, setExpanding] = useState<number | null>(null);
+  const [expandError, setExpandError] = useState<string | null>(null);
+  const [milestoneModalGoalId, setMilestoneModalGoalId] = useState<number | null>(null);
+  const [modalMilestones, setModalMilestones] = useState<GoalMilestone[]>([]);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [newMsTitle, setNewMsTitle] = useState("");
+  const [newMsDesc, setNewMsDesc] = useState("");
+  const [editingMsId, setEditingMsId] = useState<number | null>(null);
+  const [editingMsTitle, setEditingMsTitle] = useState("");
+  const [editingMsDesc, setEditingMsDesc] = useState("");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -510,6 +551,19 @@ function GoalsView({ language }: { language: Language }) {
       .finally(() => setLoading(false));
   }, []);
 
+  const loadModalMilestones = useCallback(() => {
+    if (milestoneModalGoalId === null) return;
+    setModalLoading(true);
+    fetchMilestones(milestoneModalGoalId)
+      .then(setModalMilestones)
+      .catch(() => {})
+      .finally(() => setModalLoading(false));
+  }, [milestoneModalGoalId]);
+
+  useEffect(() => {
+    loadModalMilestones();
+  }, [loadModalMilestones]);
+
   useEffect(() => {
     load();
   }, [load]);
@@ -519,15 +573,23 @@ function GoalsView({ language }: { language: Language }) {
     const trimmed = name.trim();
     if (!trimmed) return;
     setCreating(true);
-    createGoal({ name: trimmed, description: description.trim(), currentFocus: currentFocus.trim(), active: true })
+    createGoal({ name: trimmed, description: description.trim(), currentFocus: "", active: true })
       .then(() => {
         setName("");
         setDescription("");
-        setCurrentFocus("");
         load();
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to create goal"))
       .finally(() => setCreating(false));
+  };
+
+  const handleExpand = (goal: LearningGoal) => {
+    setExpanding(goal.id);
+    setExpandError(null);
+    expandGoalDescription(goal.id)
+      .then(() => load())
+      .catch((err: unknown) => setExpandError(err instanceof Error ? err.message : "Failed to expand description"))
+      .finally(() => setExpanding(null));
   };
 
   const handleToggleActive = (goal: LearningGoal) => {
@@ -558,10 +620,6 @@ function GoalsView({ language }: { language: Language }) {
             {language === "zh" ? "描述" : "Description"}
             <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} />
           </label>
-          <label>
-            {language === "zh" ? "当前阶段" : "Current Focus"}
-            <input type="text" value={currentFocus} onChange={(e) => setCurrentFocus(e.target.value)} placeholder={language === "zh" ? "注意力机制" : "Attention mechanism"} />
-          </label>
           {error && <p className="status-note warning">{error}</p>}
           <div className="form-actions">
             <button className="primary-button" disabled={creating} type="submit">
@@ -573,30 +631,138 @@ function GoalsView({ language }: { language: Language }) {
       </Panel>
 
       <Panel title={language === "zh" ? `学习目标（${goals.length}）` : `Goals (${goals.length})`}>
+        {expandError && <p className="status-note warning">{expandError}</p>}
         {goals.length === 0 ? (
           <p className="empty-state">{language === "zh" ? "还没有学习目标。" : "No goals yet."}</p>
         ) : (
           <ul className="item-list">
             {goals.map((goal) => (
-              <li key={goal.id} className="item-row">
-                <strong>{goal.name}</strong>
-                <small>
-                  {goal.description || "--"} · {language === "zh" ? "阶段" : "Focus"}: {goal.currentFocus || "--"} ·{" "}
-                  {goal.active ? (language === "zh" ? "进行中" : "Active") : (language === "zh" ? "已暂停" : "Paused")}
-                </small>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button className="secondary-button" onClick={() => handleToggleActive(goal)} type="button">
-                    {goal.active ? (language === "zh" ? "暂停" : "Pause") : (language === "zh" ? "激活" : "Activate")}
-                  </button>
-                  <button className="icon-button" onClick={() => handleDelete(goal)} type="button">
-                    <Trash2 aria-hidden="true" size={16} />
-                  </button>
+              <li key={goal.id} className="item-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <strong>{goal.name}</strong>
+                  <small>
+                    {goal.description || "--"} ·{" "}
+                    {goal.active ? (language === "zh" ? "进行中" : "Active") : (language === "zh" ? "已暂停" : "Paused")}
+                  </small>
+                  <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+                    <button
+                      className="icon-button"
+                      disabled={expanding === goal.id}
+                      onClick={() => handleExpand(goal)}
+                      title={language === "zh" ? "AI 补全描述" : "AI expand description"}
+                      type="button"
+                    >
+                      <Sparkles aria-hidden="true" size={14} />
+                    </button>
+                    <button
+                      className="icon-button"
+                      onClick={() => { setMilestoneModalGoalId(goal.id); }}
+                      title={language === "zh" ? "里程碑" : "Milestones"}
+                      type="button"
+                    >
+                      📌
+                    </button>
+                    <button className="secondary-button" onClick={() => handleToggleActive(goal)} type="button">
+                      {goal.active ? (language === "zh" ? "暂停" : "Pause") : (language === "zh" ? "激活" : "Activate")}
+                    </button>
+                    <button className="icon-button" onClick={() => handleDelete(goal)} type="button">
+                      <Trash2 aria-hidden="true" size={16} />
+                    </button>
+                  </div>
                 </div>
               </li>
             ))}
           </ul>
         )}
       </Panel>
+
+      {milestoneModalGoalId !== null && (
+        <div className="modal-overlay" onClick={() => setMilestoneModalGoalId(null)}>
+          <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>
+                {goals.find(g => g.id === milestoneModalGoalId)?.name}
+                <span style={{ fontWeight: 400, color: "#69766f", marginLeft: 8 }}>
+                  · {language === "zh" ? "里程碑" : "Milestones"}
+                </span>
+              </h3>
+              <button className="modal-close" onClick={() => setMilestoneModalGoalId(null)} type="button">✕</button>
+            </div>
+
+            {modalLoading ? (
+              <p className="status-note">{language === "zh" ? "加载中..." : "Loading..."}</p>
+            ) : (
+              <>
+                {modalMilestones.length > 0 && (
+                  <>
+                    <div className="milestone-progress">
+                      <span>{language === "zh" ? "进度" : "Progress"}: {modalMilestones.filter(m => m.completed).length}/{modalMilestones.length}</span>
+                      <div className="milestone-progress-bar">
+                        <span style={{ width: `${(modalMilestones.filter(m => m.completed).length / modalMilestones.length) * 100}%` }} />
+                      </div>
+                    </div>
+                    <ul className="milestone-list">
+                      {modalMilestones.map((ms) => (
+                        <li key={ms.id} className={`milestone-item${ms.completed ? " completed" : ""}`}>
+                          {editingMsId === ms.id ? (
+                            <div style={{ flex: 1 }}>
+                              <input className="milestone-edit-title" value={editingMsTitle} onChange={(e) => setEditingMsTitle(e.target.value)} placeholder="标题" />
+                              <textarea className="milestone-edit-desc" value={editingMsDesc} onChange={(e) => setEditingMsDesc(e.target.value)} placeholder={language === "zh" ? "描述（可选）" : "Description (optional)"} />
+                              <div className="milestone-edit-actions">
+                                <button className="primary-button" style={{ minHeight: 32, padding: "0 12px", fontSize: "0.85rem" }} onClick={() => {
+                                  updateMilestone(ms.id, { title: editingMsTitle, description: editingMsDesc }).then(() => {
+                                    setEditingMsId(null);
+                                    loadModalMilestones();
+                                  });
+                                }} type="button">{language === "zh" ? "保存" : "Save"}</button>
+                                <button className="secondary-button" style={{ minHeight: 32, padding: "0 12px", fontSize: "0.85rem" }} onClick={() => setEditingMsId(null)} type="button">{language === "zh" ? "取消" : "Cancel"}</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <input className="milestone-checkbox" type="checkbox" checked={ms.completed} onChange={() => updateMilestone(ms.id, { completed: !ms.completed }).then(loadModalMilestones)} />
+                              <div className="milestone-body">
+                                <span className="milestone-title">{ms.title}</span>
+                                {ms.description && <span className="milestone-desc">{ms.description}</span>}
+                              </div>
+                              <div className="milestone-actions">
+                                <button className="milestone-btn" onClick={() => { setEditingMsId(ms.id); setEditingMsTitle(ms.title); setEditingMsDesc(ms.description); }} title={language === "zh" ? "编辑" : "Edit"} type="button">✏️</button>
+                                <button className="milestone-btn" onClick={() => deleteMilestone(ms.id).then(loadModalMilestones)} title={language === "zh" ? "删除" : "Delete"} type="button">🗑️</button>
+                              </div>
+                            </>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+
+                {modalMilestones.length === 0 && (
+                  <p className="empty-state" style={{ marginBottom: 20 }}>{language === "zh" ? "还没有里程碑。添加一个吧。" : "No milestones yet."}</p>
+                )}
+
+                <form className="milestone-add-form" onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!newMsTitle.trim()) return;
+                  createMilestone(milestoneModalGoalId, { title: newMsTitle.trim(), description: newMsDesc.trim() }).then(() => {
+                    setNewMsTitle("");
+                    setNewMsDesc("");
+                    loadModalMilestones();
+                  });
+                }}>
+                  <div className="milestone-add-row">
+                    <input value={newMsTitle} onChange={(e) => setNewMsTitle(e.target.value)} placeholder={language === "zh" ? "里程碑标题" : "Milestone title"} />
+                    <button className="primary-button" type="submit" disabled={!newMsTitle.trim()}>
+                      {language === "zh" ? "添加" : "Add"}
+                    </button>
+                  </div>
+                  <textarea value={newMsDesc} onChange={(e) => setNewMsDesc(e.target.value)} rows={2} placeholder={language === "zh" ? "描述（可选）" : "Description (optional)"} style={{ width: "100%", minHeight: 48, resize: "vertical" }} />
+                </form>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -687,38 +853,71 @@ function AIPlanningView({ language, onTaskAccepted }: { language: Language; onTa
   const [goals, setGoals] = useState<LearningGoal[]>([]);
   const [goalId, setGoalId] = useState<number | null>(null);
   const [date, setDate] = useState(todayIso);
-  const [createdTasks, setCreatedTasks] = useState<Task[]>([]);
+  const [planResult, setPlanResult] = useState<AIPlanResult | null>(null);
+  const [selectedTasks, setSelectedTasks] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
-  const loadGoals = useCallback(() => {
+  useEffect(() => {
     fetchGoals()
       .then((data) => {
         setGoals(data);
-        if (data.length > 0 && goalId === null) {
-          setGoalId(data[0].id);
-        }
+        setGoalId((prev) => (prev === null && data.length > 0 ? data[0].id : prev));
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load goals"));
-  }, [goalId]);
-
-  useEffect(() => {
-    loadGoals();
-  }, [loadGoals]);
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load goals"))
+      .finally(() => setLoading(false));
+  }, []);
 
   const handleGenerate = () => {
     if (goalId === null) return;
     setGenerating(true);
     setError(null);
-    setCreatedTasks([]);
+    setPlanResult(null);
+    setSelectedTasks(new Set());
     generateAIPlan({ date, goalId })
       .then((result) => {
-        setCreatedTasks(result.tasks);
-        onTaskAccepted();
+        setPlanResult(result);
+        // 默认全选所有建议任务
+        setSelectedTasks(new Set(result.suggestedTasks.map((_, i) => i)));
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to generate plan"))
       .finally(() => setGenerating(false));
+  };
+
+  const toggleTask = (index: number) => {
+    setSelectedTasks((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  const handleConfirm = () => {
+    if (!planResult || selectedTasks.size === 0) return;
+    setConfirming(true);
+    setError(null);
+    batchCreateTasks({
+      tasks: Array.from(selectedTasks).map((i) => ({
+        title: planResult.suggestedTasks[i].title,
+        plannedFor: "today" as const,
+        area: planResult.suggestedTasks[i].area,
+        priority: "normal" as const,
+      })),
+      forDate: date,
+    })
+      .then(() => {
+        setPlanResult(null);
+        setSelectedTasks(new Set());
+        onTaskAccepted();
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to add tasks"))
+      .finally(() => setConfirming(false));
   };
 
   const activeGoals = goals.filter((goal) => goal.active);
@@ -744,7 +943,7 @@ function AIPlanningView({ language, onTaskAccepted }: { language: Language; onTa
           <span>{language === "zh" ? "日期" : "Date"}</span>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </label>
-        <button className="primary-button" disabled={generating || goalId === null} onClick={handleGenerate} type="button">
+        <button className="primary-button" disabled={generating || confirming || goalId === null} onClick={handleGenerate} type="button">
           <Sparkles aria-hidden="true" size={16} />
           {generating
             ? (language === "zh" ? "生成中..." : "Generating...")
@@ -756,22 +955,63 @@ function AIPlanningView({ language, onTaskAccepted }: { language: Language; onTa
 
       {loading ? (
         <p className="status-note">{language === "zh" ? "正在读取目标..." : "Loading goals..."}</p>
-      ) : createdTasks.length > 0 ? (
-        <Panel title={language === "zh" ? `已创建 ${createdTasks.length} 个任务` : `${createdTasks.length} tasks created`}>
-          <ul className="item-list">
-            {createdTasks.map((task) => (
-              <li key={task.id} className={`item-row${task.completed ? " done" : ""}`}>
-                <label className="check-label">
-                  <input type="checkbox" checked={task.completed} readOnly />
-                  <span>{task.title}</span>
-                </label>
-                <small>{task.area || "--"} · {task.priority}</small>
-              </li>
-            ))}
-          </ul>
-        </Panel>
+      ) : planResult ? (
+        <>
+          {/* 今日计划 */}
+          {planResult.todayPlan.length > 0 && (
+            <Panel title={language === "zh" ? "今日计划" : "Today's Plan"}>
+              <ul className="plain-list compact-list">
+                {planResult.todayPlan.map((item, i) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </Panel>
+          )}
+
+          {/* 推荐任务 */}
+          {planResult.suggestedTasks.length > 0 && (
+            <Panel title={
+              language === "zh"
+                ? `推荐任务（勾选后确认添加）`
+                : `Suggested Tasks (check to confirm)`
+            }>
+              <ul className="item-list">
+                {planResult.suggestedTasks.map((task, i) => (
+                  <li key={i} className="item-row">
+                    <label className="check-label" style={{ cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedTasks.has(i)}
+                        onChange={() => toggleTask(i)}
+                      />
+                      <span>{task.title}</span>
+                    </label>
+                    <small>{task.area || "--"} · {task.priority}</small>
+                    {task.reason && <p className="form-status">{task.reason}</p>}
+                  </li>
+                ))}
+              </ul>
+            </Panel>
+          )}
+
+          {/* 确认按钮 */}
+          <div className="panel-toolbar" style={{ justifyContent: "flex-end" }}>
+            <button
+              className="primary-button"
+              disabled={confirming || selectedTasks.size === 0}
+              onClick={handleConfirm}
+              type="button"
+            >
+              {confirming
+                ? (language === "zh" ? "添加中..." : "Adding...")
+                : (language === "zh"
+                    ? `确认添加 (${selectedTasks.size}/${planResult.suggestedTasks.length})`
+                    : `Confirm (${selectedTasks.size}/${planResult.suggestedTasks.length})`)}
+            </button>
+          </div>
+        </>
       ) : (
-        <p className="empty-state">{language === "zh" ? "点击上方按钮生成 AI 规划，今日任务将自动创建。" : "Click Generate to create today's tasks with AI."}</p>
+        <p className="empty-state">{language === "zh" ? "点击上方按钮生成 AI 规划，勾选任务后确认添加。" : "Click Generate to create a plan, check tasks and confirm."}</p>
       )}
     </div>
   );
@@ -858,6 +1098,7 @@ function AIConfigView({ language }: { language: Language }) {
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [sendActivityTitles, setSendActivityTitles] = useState(true);
+  const [planningPrompt, setPlanningPrompt] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -873,6 +1114,7 @@ function AIConfigView({ language }: { language: Language }) {
         setEndpoint(data.endpoint);
         setModel(data.model);
         setSendActivityTitles(data.sendActivityTitles);
+        setPlanningPrompt(data.planningPrompt);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load AI config"))
       .finally(() => setLoading(false));
@@ -892,6 +1134,7 @@ function AIConfigView({ language }: { language: Language }) {
       model,
       apiKey: apiKey.length > 0 ? apiKey : undefined,
       sendActivityTitles,
+      planningPrompt,
     })
       .then((data) => {
         setConfig(data);
@@ -962,6 +1205,16 @@ function AIConfigView({ language }: { language: Language }) {
             />
             <span>{language === "zh" ? "允许把 ActivityWatch 窗口标题发送给 AI" : "Send ActivityWatch titles to AI"}</span>
           </label>
+          <label>
+            <span>{language === "zh" ? "AI 规划提示词（可选，覆盖默认）" : "AI Planning Prompt (optional, overrides default)"}</span>
+            <textarea
+              value={planningPrompt}
+              onChange={(e) => setPlanningPrompt(e.target.value)}
+              rows={4}
+              placeholder={language === "zh" ? "请根据我的学习目标和本周进度，生成今日学习计划..." : "Generate today's plan based on my goals and weekly progress..."}
+              style={{ width: "100%", resize: "vertical" }}
+            />
+          </label>
           {saveMessage && <p className="status-note">{saveMessage}</p>}
           <div className="form-actions">
             <button className="primary-button" disabled={saving} type="submit">
@@ -1013,6 +1266,17 @@ function SettingsView({ language }: { language: Language }) {
         ) : (
           <p className="empty-state">{language === "zh" ? "正在读取..." : "Loading..."}</p>
         )}
+      </Panel>
+
+      <Panel title={language === "zh" ? "界面设置" : "UI Settings"}>
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            defaultChecked={localStorage.getItem("schedule_task_delete_enabled") !== "false"}
+            onChange={(e) => localStorage.setItem("schedule_task_delete_enabled", String(e.target.checked))}
+          />
+          <span>{language === "zh" ? "日程记录中显示任务删除按钮" : "Show delete button in schedule records"}</span>
+        </label>
       </Panel>
 
       <Panel title={language === "zh" ? "后端状态与退出" : "Backend Status & Stop"}>

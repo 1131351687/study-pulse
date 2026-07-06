@@ -28,12 +28,17 @@ class GoalPlanRequest(BaseModel):
     goalId: int
 
 
+class GoalExpandRequest(BaseModel):
+    goalId: int
+
+
 class AIConfigRequest(BaseModel):
     provider: str
     endpoint: str = ""
     model: str = ""
     apiKey: str | None = None
     sendActivityTitles: bool = True
+    planningPrompt: str = ""
 
 
 @router.get("/ai/config")
@@ -45,6 +50,7 @@ def read_config() -> dict[str, Any]:
         "model": config.model,
         "sendActivityTitles": config.send_activity_titles,
         "hasApiKey": bool(config.api_key),
+        "planningPrompt": config.planning_prompt,
     }
 
 
@@ -65,6 +71,7 @@ def update_config(payload: AIConfigRequest) -> dict[str, Any]:
             model=model,
             api_key=api_key,
             send_activity_titles=payload.sendActivityTitles,
+            planning_prompt=payload.planningPrompt,
         )
     )
     return {
@@ -73,6 +80,7 @@ def update_config(payload: AIConfigRequest) -> dict[str, Any]:
         "model": config.model,
         "sendActivityTitles": config.send_activity_titles,
         "hasApiKey": bool(config.api_key),
+        "planningPrompt": config.planning_prompt,
     }
 
 
@@ -184,54 +192,54 @@ def generate_goal_plan(payload: GoalPlanRequest) -> dict[str, Any]:
         "goal": goal,
         "todayRecord": build_day_record(target_date),
         "recentRecords": list_recent_day_records(7),
+        "milestones": _read_goal_milestones(payload.goalId),
     }
 
     if config.provider == "mock":
         result = _mock_goal_plan(context)
     else:
+        system_prompt = config.planning_prompt.strip()
+        if system_prompt:
+            # 用户自定义 prompt → 追加 JSON 格式要求以确保兼容
+            system_prompt += (
+                "\n\nIMPORTANT: You MUST return only valid JSON with keys: "
+                "todayPlan (array of strings), weekPlan (array of strings), "
+                "suggestedTasks (array of objects with keys: title, reason, plannedFor)."
+            )
+        else:
+            system_prompt = (
+                "You create a study plan for one learning goal. Return only JSON with keys: "
+                "todayPlan, weekPlan, suggestedTasks."
+            )
         result = _normalize_goal_plan(
             request_json_response(
                 config.provider,
                 config.endpoint,
                 config.model,
                 config.api_key,
-                (
-                    "You create a study plan for one learning goal. Return only JSON with keys: "
-                    "todayPlan, weekPlan, suggestedTasks."
-                ),
+                system_prompt,
                 context,
             )
         )
 
-    created_tasks: list[dict[str, Any]] = []
-    goal_name = goal["name"]
-    with get_connection() as connection:
-        for task in result.get("suggestedTasks", []):
-            planned_for = str(task.get("plannedFor") or "today")
-            if planned_for != "today":
-                continue
-            title = str(task.get("title") or "").strip()
-            if not title:
-                continue
-            cursor = connection.execute(
-                "INSERT INTO tasks (title, planned_for, area, priority, updated_at) VALUES (?, 'today', ?, 'normal', CURRENT_TIMESTAMP)",
-                (title, goal_name),
-            )
-            task_row = connection.execute(
-                "SELECT id, title, completed, planned_for, area, priority, created_at, updated_at FROM tasks WHERE id = ?",
-                (cursor.lastrowid,),
-            ).fetchone()
-            created_tasks.append({
-                "id": task_row["id"],
-                "title": task_row["title"],
-                "completed": bool(task_row["completed"]),
-                "plannedFor": task_row["planned_for"],
-                "area": task_row["area"],
-                "priority": task_row["priority"],
-                "createdAt": task_row["created_at"],
-                "updatedAt": task_row["updated_at"],
-            })
-    return {"tasks": created_tasks}
+    # ── 构建建议任务列表（不入库，前端确认后才批量创建） ──
+    suggested_tasks: list[dict[str, Any]] = []
+    for task in result.get("suggestedTasks", []):
+        title = str(task.get("title") or "").strip()
+        if not title:
+            continue
+        suggested_tasks.append({
+            "title": title,
+            "reason": str(task.get("reason") or "").strip(),
+            "plannedFor": str(task.get("plannedFor") or "today"),
+            "area": goal["name"],
+            "priority": "normal",
+        })
+
+    return {
+        "todayPlan": result.get("todayPlan", []),
+        "suggestedTasks": suggested_tasks,
+    }
 
 
 @router.get("/ai/daily-plan/{date}")
@@ -247,6 +255,62 @@ def read_daily_plan(date: str) -> dict[str, Any]:
         "date": row["date"],
         "provider": row["provider"],
         "result": json.loads(row["content_json"]),
+        "updatedAt": row["updated_at"],
+    }
+
+
+@router.post("/ai/expand-description")
+def expand_goal_description(payload: GoalExpandRequest) -> dict[str, Any]:
+    goal = read_goal(payload.goalId)
+    if goal is None:
+        raise HTTPException(status_code=404, detail="Goal not found.")
+
+    config = read_ai_config()
+    goal_name = goal["name"]
+    current_desc = goal["description"]
+
+    if config.provider == "mock":
+        # Mock: 生成详细学习路线
+        expanded = (
+            f"## {goal_name} 学习路线\n\n"
+            f"### 第一阶段：基础入门\n"
+            f"了解 {goal_name} 的核心概念和应用场景，阅读入门教程和文档。\n\n"
+            f"### 第二阶段：深入理解\n"
+            f"系统学习 {goal_name} 的核心原理，完成配套练习和项目。\n\n"
+            f"### 第三阶段：实践应用\n"
+            f"将 {goal_name} 应用到实际项目中，解决真实问题。\n\n"
+            f"### 第四阶段：总结巩固\n"
+            f"整理学习笔记，撰写总结文章，分享学习经验。"
+        )
+    else:
+        system_prompt = (
+            "你是学习规划专家。根据目标名称和已有描述，生成一份详细的学习路线规划。"
+            "请以JSON格式返回，包含一个key 'plan'，值为一份详细的Markdown格式学习路线文本（包含阶段划分、学习内容、实践项目）。"
+        )
+        context = {"goalName": goal_name, "currentDescription": current_desc}
+        try:
+            response = request_json_response(config.provider, config.endpoint, config.model, config.api_key, system_prompt, context)
+            expanded = response.get("plan") or response.get("description") or response.get("result") or str(response)
+        except (ValueError, KeyError, json.JSONDecodeError) as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
+
+    with get_connection() as connection:
+        connection.execute(
+            "UPDATE learning_goals SET description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (expanded, payload.goalId),
+        )
+        row = connection.execute(
+            "SELECT id, name, description, current_focus, active, created_at, updated_at FROM learning_goals WHERE id = ?",
+            (payload.goalId,),
+        ).fetchone()
+
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "description": row["description"],
+        "currentFocus": row["current_focus"],
+        "active": bool(row["active"]),
+        "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
     }
 
@@ -351,19 +415,49 @@ def _mock_summary(day_record: dict[str, Any]) -> dict[str, Any]:
 def _mock_goal_plan(context: dict[str, Any]) -> dict[str, Any]:
     goal = context["goal"]
     focus = goal.get("currentFocus") or goal.get("name")
+    milestones = context.get("milestones") or []
+    completed_milestones = [m for m in milestones if m["completed"]]
+    incomplete_milestones = [m for m in milestones if not m["completed"]]
+
+    # 分析近期日志推断学习主题
+    recent = context.get("recentRecords") or []
+    journal_texts = []
+    for record in recent:
+        journal = record.get("journal", {}).get("content", "") or ""
+        if journal.strip():
+            journal_texts.append(journal.lower())
+    all_text = " ".join(journal_texts)
+
+    topics = []
+    for keyword, topic in [
+        ("transformer", "Transformer"), ("attention", "Attention"), ("rope", "RoPE"),
+        ("python", "Python"), ("react", "React"), ("fastapi", "FastAPI"),
+        ("neural", "Neural Networks"), ("rl", "Reinforcement Learning"),
+        ("cv", "Computer Vision"), ("nlp", "NLP"), ("database", "Databases"),
+        ("sql", "SQL"), ("docker", "Docker"), ("linux", "Linux"),
+    ]:
+        if keyword in all_text and topic not in topics:
+            topics.append(topic)
+    if not topics:
+        topics = [focus]
+
+    today_items = []
+    # 如果有未完成的里程碑，优先建议
+    for m in incomplete_milestones[:2]:
+        today_items.append(f"推进里程碑「{m['title']}」：完成当前阶段学习")
+    for topic_name in topics[:2]:
+        today_items.append(f"深入学习 {topic_name}：阅读核心资料并做笔记")
+    today_items.append(f"撰写今日学习总结，记录关键收获和疑问")
+
+    suggested = []
+    if incomplete_milestones:
+        suggested.append({"title": f"完成里程碑：{incomplete_milestones[0]['title']}", "reason": "当前学习阶段的关键任务", "plannedFor": "today"})
+    suggested.append({"title": f"学习 {topics[0]}", "reason": "今日首要学习目标", "plannedFor": "today"})
+    suggested.append({"title": f"整理 {goal['name']} 笔记", "reason": "将学习内容转化为持久记录", "plannedFor": "today"})
+
     return {
-        "todayPlan": [
-            f"Read or practice one focused unit for {focus}.",
-            f"Write one short note that explains today's learning about {focus}.",
-        ],
-        "weekPlan": [
-            f"Break {goal['name']} into three concrete subtopics.",
-            "Reserve at least three study blocks this week.",
-        ],
-        "suggestedTasks": [
-            {"title": f"Study {focus}", "reason": "Main active learning target.", "plannedFor": "today"},
-            {"title": f"Write notes for {goal['name']}", "reason": "Turn study into a durable record.", "plannedFor": "today"},
-        ],
+        "todayPlan": today_items[:6],
+        "suggestedTasks": suggested,
     }
 
 
@@ -389,3 +483,16 @@ def _default_model(provider: str, model: str) -> str:
     if provider == "ollama":
         return "llama3.1"
     return ""
+
+
+def _read_goal_milestones(goal_id: int) -> list[dict[str, Any]]:
+    from app.db import get_connection
+    with get_connection() as connection:
+        rows = connection.execute(
+            "SELECT id, title, completed, position FROM goal_milestones WHERE goal_id = ? ORDER BY position ASC, id ASC",
+            (goal_id,),
+        ).fetchall()
+    return [
+        {"id": row["id"], "title": row["title"], "completed": bool(row["completed"]), "position": row["position"]}
+        for row in rows
+    ]
