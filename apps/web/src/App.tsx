@@ -1,4 +1,5 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import {
   Bot,
   BookOpen,
@@ -97,7 +98,9 @@ const navItems: NavItem[] = [
 ];
 
 const languageStorageKey = "study-pulse-language";
-const todayIso = localDateString(new Date());
+function getTodayIso(): string {
+  return localDateString(new Date());
+}
 
 export function App() {
   const [language, setLanguage] = useState<Language>(() =>
@@ -256,7 +259,7 @@ function TodayView({ language }: { language: Language }) {
 }
 
 function ScheduleView({ language }: { language: Language }) {
-  const [date, setDate] = useState(todayIso);
+  const [date, setDate] = useState(getTodayIso());
   const [record, setRecord] = useState<DayRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -348,7 +351,9 @@ function ScheduleView({ language }: { language: Language }) {
 
       <Panel title={language === "zh" ? "日志" : "Journal"}>
         {record.journal.content.trim() ? (
-          <p className="readonly-text">{record.journal.content}</p>
+          <div className="markdown-body">
+            <ReactMarkdown>{record.journal.content}</ReactMarkdown>
+          </div>
         ) : (
           <p className="empty-state">{language === "zh" ? "这一天还没有日志。" : "No journal for this day."}</p>
         )}
@@ -431,14 +436,14 @@ function TasksView({ language, tasksVersion }: { language: Language; tasksVersio
     load();
   }, [load, tasksVersion]);
 
-  const todayTasks = useMemo(() => tasks.filter((task) => task.forDate === todayIso), [tasks]);
+  const todayTasks = useMemo(() => tasks.filter((task) => task.forDate === getTodayIso()), [tasks]);
 
   const handleCreate = (event: FormEvent) => {
     event.preventDefault();
     const title = newTitle.trim();
     if (!title) return;
     setCreating(true);
-    createTask({ title, plannedFor: "today", forDate: todayIso, area: newArea.trim(), priority: newPriority })
+    createTask({ title, plannedFor: "today", forDate: getTodayIso(), area: newArea.trim(), priority: newPriority })
       .then(() => {
         setNewTitle("");
         load();
@@ -768,7 +773,7 @@ function GoalsView({ language }: { language: Language }) {
 }
 
 function AISummaryView({ language }: { language: Language }) {
-  const [date, setDate] = useState(todayIso);
+  const [date, setDate] = useState(getTodayIso());
   const [summaries, setSummaries] = useState<AISummaryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -852,7 +857,7 @@ function AISummaryView({ language }: { language: Language }) {
 function AIPlanningView({ language, onTaskAccepted }: { language: Language; onTaskAccepted: () => void }) {
   const [goals, setGoals] = useState<LearningGoal[]>([]);
   const [goalId, setGoalId] = useState<number | null>(null);
-  const [date, setDate] = useState(todayIso);
+  const [date, setDate] = useState(getTodayIso());
   const [planResult, setPlanResult] = useState<AIPlanResult | null>(null);
   const [selectedTasks, setSelectedTasks] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -905,9 +910,9 @@ function AIPlanningView({ language, onTaskAccepted }: { language: Language; onTa
     batchCreateTasks({
       tasks: Array.from(selectedTasks).map((i) => ({
         title: planResult.suggestedTasks[i].title,
-        plannedFor: "today" as const,
+        plannedFor: planResult.suggestedTasks[i].plannedFor,
         area: planResult.suggestedTasks[i].area,
-        priority: "normal" as const,
+        priority: planResult.suggestedTasks[i].priority,
       })),
       forDate: date,
     })
@@ -1018,12 +1023,13 @@ function AIPlanningView({ language, onTaskAccepted }: { language: Language; onTa
 }
 
 function JournalView({ language }: { language: Language }) {
-  const [date, setDate] = useState(todayIso);
+  const [date, setDate] = useState(getTodayIso());
   const [journal, setJournal] = useState<Journal | null>(null);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -1068,11 +1074,39 @@ function JournalView({ language }: { language: Language }) {
       </div>
       {error && <p className="status-note warning">{error}</p>}
       <Panel title={language === "zh" ? "每日学习日志" : "Daily Journal"}>
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={language === "zh" ? "写下今天学了什么、哪里卡住、明天想继续什么。" : "What did you study today?"}
-        />
+        <div className="panel-toolbar" style={{ marginBottom: 12 }}>
+          <button
+            className={previewMode ? "secondary-button" : "primary-button"}
+            onClick={() => setPreviewMode(false)}
+            type="button"
+            style={{ minHeight: 32, padding: "0 12px", fontSize: "0.85rem" }}
+          >
+            {language === "zh" ? "编辑" : "Edit"}
+          </button>
+          <button
+            className={previewMode ? "primary-button" : "secondary-button"}
+            onClick={() => setPreviewMode(true)}
+            type="button"
+            style={{ minHeight: 32, padding: "0 12px", fontSize: "0.85rem" }}
+          >
+            {language === "zh" ? "预览" : "Preview"}
+          </button>
+        </div>
+        {previewMode ? (
+          draft.trim() ? (
+            <div className="markdown-body">
+              <ReactMarkdown>{draft}</ReactMarkdown>
+            </div>
+          ) : (
+            <p className="empty-state">{language === "zh" ? "还没有内容。" : "Nothing to preview."}</p>
+          )
+        ) : (
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={language === "zh" ? "支持 Markdown 格式。写下今天学了什么、哪里卡住、明天想继续什么。" : "Markdown supported. What did you study today?"}
+          />
+        )}
         <div className="form-actions" style={{ marginTop: 12 }}>
           <button className="primary-button" disabled={saving} onClick={handleSave} type="button">
             <Save aria-hidden="true" size={16} />
@@ -1099,6 +1133,7 @@ function AIConfigView({ language }: { language: Language }) {
   const [apiKey, setApiKey] = useState("");
   const [sendActivityTitles, setSendActivityTitles] = useState(true);
   const [planningPrompt, setPlanningPrompt] = useState("");
+  const [summaryPrompt, setSummaryPrompt] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -1115,6 +1150,7 @@ function AIConfigView({ language }: { language: Language }) {
         setModel(data.model);
         setSendActivityTitles(data.sendActivityTitles);
         setPlanningPrompt(data.planningPrompt);
+        setSummaryPrompt(data.summaryPrompt);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load AI config"))
       .finally(() => setLoading(false));
@@ -1135,6 +1171,7 @@ function AIConfigView({ language }: { language: Language }) {
       apiKey: apiKey.length > 0 ? apiKey : undefined,
       sendActivityTitles,
       planningPrompt,
+      summaryPrompt,
     })
       .then((data) => {
         setConfig(data);
@@ -1205,16 +1242,6 @@ function AIConfigView({ language }: { language: Language }) {
             />
             <span>{language === "zh" ? "允许把 ActivityWatch 窗口标题发送给 AI" : "Send ActivityWatch titles to AI"}</span>
           </label>
-          <label>
-            <span>{language === "zh" ? "AI 规划提示词（可选，覆盖默认）" : "AI Planning Prompt (optional, overrides default)"}</span>
-            <textarea
-              value={planningPrompt}
-              onChange={(e) => setPlanningPrompt(e.target.value)}
-              rows={4}
-              placeholder={language === "zh" ? "请根据我的学习目标和本周进度，生成今日学习计划..." : "Generate today's plan based on my goals and weekly progress..."}
-              style={{ width: "100%", resize: "vertical" }}
-            />
-          </label>
           {saveMessage && <p className="status-note">{saveMessage}</p>}
           <div className="form-actions">
             <button className="primary-button" disabled={saving} type="submit">
@@ -1236,12 +1263,41 @@ function AIConfigView({ language }: { language: Language }) {
 function SettingsView({ language }: { language: Language }) {
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [aiConfig, setAiConfig] = useState<AIConfig | null>(null);
+  const [planningPrompt, setPlanningPrompt] = useState("");
+  const [summaryPrompt, setSummaryPrompt] = useState("");
+  const [promptSaving, setPromptSaving] = useState(false);
+  const [promptMessage, setPromptMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchSettings()
       .then(setSettings)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load settings"));
+    fetchAIConfig()
+      .then((data) => {
+        setAiConfig(data);
+        setPlanningPrompt(data.planningPrompt);
+        setSummaryPrompt(data.summaryPrompt);
+      })
+      .catch(() => {});
   }, []);
+
+  const handleSavePrompts = () => {
+    if (!aiConfig) return;
+    setPromptSaving(true);
+    setPromptMessage(null);
+    saveAIConfig({
+      provider: aiConfig.provider,
+      endpoint: aiConfig.endpoint,
+      model: aiConfig.model,
+      sendActivityTitles: aiConfig.sendActivityTitles,
+      planningPrompt,
+      summaryPrompt,
+    })
+      .then(() => setPromptMessage(language === "zh" ? "提示词已保存" : "Prompts saved"))
+      .catch((err: unknown) => setPromptMessage(err instanceof Error ? err.message : "Failed to save"))
+      .finally(() => setPromptSaving(false));
+  };
 
   return (
     <div className="single-column settings-layout" style={{ gap: "16px" }}>
@@ -1277,6 +1333,43 @@ function SettingsView({ language }: { language: Language }) {
           />
           <span>{language === "zh" ? "日程记录中显示任务删除按钮" : "Show delete button in schedule records"}</span>
         </label>
+      </Panel>
+
+      <Panel title={language === "zh" ? "AI 提示词" : "AI Prompts"}>
+        <p className="form-status" style={{ marginBottom: 12 }}>
+          {language === "zh"
+            ? "自定义 AI 规划和总结的提示词。留空则使用默认。填写的提示词会自动追加 JSON 格式要求。"
+            : "Customize AI planning and summary prompts. Leave blank for defaults. JSON format requirements are appended automatically."}
+        </p>
+        <div className="stack-form">
+          <label>
+            <span>{language === "zh" ? "AI 规划提示词" : "AI Planning Prompt"}</span>
+            <textarea
+              value={planningPrompt}
+              onChange={(e) => setPlanningPrompt(e.target.value)}
+              rows={4}
+              placeholder={language === "zh" ? "请根据我的学习目标、里程碑进度和本周日志，生成今日学习计划..." : "Generate today's plan based on my goals, milestones, and weekly journals..."}
+              style={{ width: "100%", resize: "vertical", minHeight: 80 }}
+            />
+          </label>
+          <label>
+            <span>{language === "zh" ? "AI 总结提示词" : "AI Summary Prompt"}</span>
+            <textarea
+              value={summaryPrompt}
+              onChange={(e) => setSummaryPrompt(e.target.value)}
+              rows={4}
+              placeholder={language === "zh" ? "请根据我今天的学习日志、任务完成情况和屏幕使用时间，生成学习总结..." : "Summarize my study day based on journals, tasks, and screen time..."}
+              style={{ width: "100%", resize: "vertical", minHeight: 80 }}
+            />
+          </label>
+          {promptMessage && <p className="status-note">{promptMessage}</p>}
+          <div className="form-actions">
+            <button className="primary-button" disabled={promptSaving || !aiConfig} onClick={handleSavePrompts} type="button">
+              <Save aria-hidden="true" size={16} />
+              {language === "zh" ? "保存提示词" : "Save Prompts"}
+            </button>
+          </div>
+        </div>
       </Panel>
 
       <Panel title={language === "zh" ? "后端状态与退出" : "Backend Status & Stop"}>

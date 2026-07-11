@@ -14,6 +14,7 @@ class AIConfig:
     api_key: str
     send_activity_titles: bool
     planning_prompt: str = ""
+    summary_prompt: str = ""
 
 
 def read_ai_config() -> AIConfig:
@@ -21,7 +22,7 @@ def read_ai_config() -> AIConfig:
     with get_connection() as connection:
         row = connection.execute(
             """
-            SELECT provider, endpoint, model, api_key, send_activity_titles, planning_prompt
+            SELECT provider, endpoint, model, api_key, send_activity_titles, planning_prompt, summary_prompt
             FROM ai_config
             WHERE id = 1
             """
@@ -43,6 +44,7 @@ def read_ai_config() -> AIConfig:
         api_key=row["api_key"],
         send_activity_titles=bool(row["send_activity_titles"]),
         planning_prompt=row["planning_prompt"],
+        summary_prompt=row["summary_prompt"],
     )
 
 
@@ -50,8 +52,8 @@ def save_ai_config(config: AIConfig) -> AIConfig:
     with get_connection() as connection:
         connection.execute(
             """
-            INSERT INTO ai_config (id, provider, endpoint, model, api_key, send_activity_titles, planning_prompt, updated_at)
-            VALUES (1, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            INSERT INTO ai_config (id, provider, endpoint, model, api_key, send_activity_titles, planning_prompt, summary_prompt, updated_at)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(id) DO UPDATE SET
                 provider = excluded.provider,
                 endpoint = excluded.endpoint,
@@ -59,6 +61,7 @@ def save_ai_config(config: AIConfig) -> AIConfig:
                 api_key = excluded.api_key,
                 send_activity_titles = excluded.send_activity_titles,
                 planning_prompt = excluded.planning_prompt,
+                summary_prompt = excluded.summary_prompt,
                 updated_at = CURRENT_TIMESTAMP
             """,
             (
@@ -68,6 +71,7 @@ def save_ai_config(config: AIConfig) -> AIConfig:
                 config.api_key,
                 1 if config.send_activity_titles else 0,
                 config.planning_prompt,
+                config.summary_prompt,
             ),
         )
     return config

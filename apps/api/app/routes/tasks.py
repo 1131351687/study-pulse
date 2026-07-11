@@ -1,3 +1,4 @@
+from datetime import date as today_date
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -52,7 +53,7 @@ def create_task(payload: TaskCreate) -> dict:
     if not title:
         raise HTTPException(status_code=400, detail="Task title is required.")
 
-    for_date = payload.forDate or __import__("datetime").date.today().isoformat()
+    for_date = payload.forDate or today_date.today().isoformat()
 
     with get_connection() as connection:
         cursor = connection.execute(

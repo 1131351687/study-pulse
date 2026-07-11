@@ -39,6 +39,7 @@ class AIConfigRequest(BaseModel):
     apiKey: str | None = None
     sendActivityTitles: bool = True
     planningPrompt: str = ""
+    summaryPrompt: str = ""
 
 
 @router.get("/ai/config")
@@ -51,6 +52,7 @@ def read_config() -> dict[str, Any]:
         "sendActivityTitles": config.send_activity_titles,
         "hasApiKey": bool(config.api_key),
         "planningPrompt": config.planning_prompt,
+        "summaryPrompt": config.summary_prompt,
     }
 
 
@@ -72,6 +74,7 @@ def update_config(payload: AIConfigRequest) -> dict[str, Any]:
             api_key=api_key,
             send_activity_titles=payload.sendActivityTitles,
             planning_prompt=payload.planningPrompt,
+            summary_prompt=payload.summaryPrompt,
         )
     )
     return {
@@ -81,6 +84,7 @@ def update_config(payload: AIConfigRequest) -> dict[str, Any]:
         "sendActivityTitles": config.send_activity_titles,
         "hasApiKey": bool(config.api_key),
         "planningPrompt": config.planning_prompt,
+        "summaryPrompt": config.summary_prompt,
     }
 
 
@@ -133,16 +137,25 @@ def generate_summary(payload: SummaryRequest) -> dict[str, Any]:
     if config.provider == "mock":
         result = _mock_summary(day_record)
     else:
+        summary_system_prompt = config.summary_prompt.strip()
+        if summary_system_prompt:
+            summary_system_prompt += (
+                "\n\nIMPORTANT: You MUST return only valid JSON with keys: "
+                "score (integer 0-100), summary (string), strengths (array of strings), "
+                "blockers (array of strings), improvements (array of strings)."
+            )
+        else:
+            summary_system_prompt = (
+                "You summarize one study day. Return only JSON with keys: "
+                "score, summary, strengths, blockers, improvements."
+            )
         result = _normalize_summary(
             request_json_response(
                 config.provider,
                 config.endpoint,
                 config.model,
                 config.api_key,
-                (
-                    "You summarize one study day. Return only JSON with keys: "
-                    "score, summary, strengths, blockers, improvements."
-                ),
+                summary_system_prompt,
                 day_record,
             )
         )
@@ -486,7 +499,6 @@ def _default_model(provider: str, model: str) -> str:
 
 
 def _read_goal_milestones(goal_id: int) -> list[dict[str, Any]]:
-    from app.db import get_connection
     with get_connection() as connection:
         rows = connection.execute(
             "SELECT id, title, completed, position FROM goal_milestones WHERE goal_id = ? ORDER BY position ASC, id ASC",

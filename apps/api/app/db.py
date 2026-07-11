@@ -11,30 +11,18 @@ def get_connection() -> sqlite3.Connection:
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(settings.database_path)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA foreign_keys = ON")
     return connection
+
+
+def _column_exists(connection: sqlite3.Connection, table: str, column: str) -> bool:
+    rows = connection.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row[1] == column for row in rows)
 
 
 def init_db() -> None:
     with get_connection() as connection:
-        # 迁移：为已有数据库添加 for_date 列
-        try:
-            connection.execute("ALTER TABLE tasks ADD COLUMN for_date TEXT")
-            connection.execute("UPDATE tasks SET for_date = date('now') WHERE for_date IS NULL")
-        except Exception:
-            pass  # 列已存在
-
-        # 迁移：添加 planning_prompt 列
-        try:
-            connection.execute("ALTER TABLE ai_config ADD COLUMN planning_prompt TEXT NOT NULL DEFAULT ''")
-        except Exception:
-            pass  # 列已存在
-
-        # 迁移：添加里程碑描述
-        try:
-            connection.execute("ALTER TABLE goal_milestones ADD COLUMN description TEXT NOT NULL DEFAULT ''")
-        except Exception:
-            pass  # 列已存在
-
+        # Ensure tables exist before running additive migrations.
         connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS journals (
@@ -114,6 +102,20 @@ def init_db() -> None:
             );
             """
         )
+
+        # SQLite only allows constant defaults when adding columns to existing tables.
+        if not _column_exists(connection, "tasks", "for_date"):
+            connection.execute("ALTER TABLE tasks ADD COLUMN for_date TEXT")
+            connection.execute("UPDATE tasks SET for_date = date('now') WHERE for_date IS NULL")
+
+        if not _column_exists(connection, "ai_config", "planning_prompt"):
+            connection.execute("ALTER TABLE ai_config ADD COLUMN planning_prompt TEXT NOT NULL DEFAULT ''")
+
+        if not _column_exists(connection, "ai_config", "summary_prompt"):
+            connection.execute("ALTER TABLE ai_config ADD COLUMN summary_prompt TEXT NOT NULL DEFAULT ''")
+
+        if not _column_exists(connection, "goal_milestones", "description"):
+            connection.execute("ALTER TABLE goal_milestones ADD COLUMN description TEXT NOT NULL DEFAULT ''")
 
 
 def rows_to_dicts(rows: Iterator[sqlite3.Row]) -> list[dict]:

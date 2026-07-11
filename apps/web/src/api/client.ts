@@ -68,6 +68,7 @@ export type AIConfig = {
   sendActivityTitles: boolean;
   hasApiKey: boolean;
   planningPrompt: string;
+  summaryPrompt: string;
 };
 
 export type AITestResponse = {
@@ -161,11 +162,6 @@ export async function fetchTodayActivity(): Promise<TodayActivityResponse> {
   return readJson<TodayActivityResponse>(response);
 }
 
-export async function fetchDayActivity(date: string): Promise<TodayActivityResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/activity/${date}`);
-  return readJson<TodayActivityResponse>(response);
-}
-
 export async function fetchJournal(date: string): Promise<Journal> {
   const response = await fetch(`${API_BASE_URL}/api/journal/${date}`);
   return readJson<Journal>(response);
@@ -217,30 +213,6 @@ export async function deleteTask(id: number): Promise<void> {
   await readJson<{ deleted: boolean }>(response);
 }
 
-export async function fetchSchedule(date: string): Promise<ScheduleBlock[]> {
-  const response = await fetch(`${API_BASE_URL}/api/schedule/${date}`);
-  return readJson<ScheduleBlock[]>(response);
-}
-
-export async function createScheduleBlock(payload: {
-  date: string;
-  startTime: string;
-  endTime: string;
-  title: string;
-}): Promise<ScheduleBlock> {
-  const response = await fetch(`${API_BASE_URL}/api/schedule`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return readJson<ScheduleBlock>(response);
-}
-
-export async function deleteScheduleBlock(id: number): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/schedule/${id}`, { method: "DELETE" });
-  await readJson<{ deleted: boolean }>(response);
-}
-
 export async function fetchSettings(): Promise<PublicSettings> {
   const response = await fetch(`${API_BASE_URL}/api/settings`);
   return readJson<PublicSettings>(response);
@@ -258,6 +230,7 @@ export async function saveAIConfig(payload: {
   apiKey?: string;
   sendActivityTitles: boolean;
   planningPrompt?: string;
+  summaryPrompt?: string;
 }): Promise<AIConfig> {
   const response = await fetch(`${API_BASE_URL}/api/ai/config`, {
     method: "PUT",

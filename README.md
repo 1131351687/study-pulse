@@ -4,7 +4,7 @@
 
 StudyPulse is a local-first learning workspace. It combines computer usage data from ActivityWatch, a daily learning journal, tasks with milestones, schedule blocks, and configurable AI providers to produce daily learning plans and summaries.
 
-The project is currently at `v0.6`: AI planning confirm flow, learning goals with milestones, custom AI prompts, date-scoped tasks, and improved schedule record.
+The project is currently at `v0.6` plus unreleased local updates: AI planning confirm flow, learning goals with milestones, custom AI planning/summary prompts, Markdown journals, date-scoped tasks, and improved schedule record.
 
 ## Current Scope
 
@@ -18,7 +18,7 @@ Implemented so far:
 - Frontend health badge that checks whether the backend is online.
 - ActivityWatch aggregation at `GET /api/activity/today` with localhost fallback.
 - SQLite database stored at `data/study-pulse.sqlite` by default.
-- Daily journal save/load.
+- Daily journal save/load with Markdown edit/preview rendering.
 - Task create, complete, and delete — tasks are scoped by date (`for_date` field).
 - Schedule block create and delete.
 - Daily AI summary and next-day plan generation at `POST /api/ai/daily-plan`.
@@ -26,7 +26,7 @@ Implemented so far:
 - AI provider connectivity test endpoint and UI button.
 - AI goal planning with **confirm flow**: AI suggests tasks, user reviews and checks which to accept before they are added (`POST /api/ai/plan`).
 - AI planning displays generated todayPlan text alongside suggested tasks.
-- **Custom AI planning prompt** in settings — override how the AI plans your day.
+- **Custom AI planning and summary prompts** in settings — override how the AI plans your day and summarizes your study record.
 - Day record endpoint (`GET /api/day-record/{date}`) aggregating journal, schedule, activity, AI summaries, and date-scoped tasks.
 - **Learning goals** with **milestones**: each goal has a milestone list (title + description, add/edit/delete/check), managed via a modal dialog.
 - **AI expand description** for goals — AI generates a detailed learning roadmap from a brief goal description.
@@ -35,6 +35,7 @@ Implemented so far:
 - Built-in MCP server for external AI client integration (Claude Desktop, Cursor, Codex).
 - Schedule record shows task delete button (togglable in Settings).
 - ActivityWatch title privacy toggle.
+- Safer SQLite migrations with foreign key enforcement and explicit column checks.
 
 Not implemented yet:
 
@@ -161,6 +162,7 @@ npm run build:web
 - `v0.4`: AI summary and next-day plan generation.
 - `v0.5`: AI planning→tasks direct flow, schedule task display, ActivityWatch fallback, MCP server.
 - `v0.6`: AI planning confirm flow, learning goals with milestones, custom AI prompts, date-scoped tasks.
+- `Unreleased`: Markdown journals, custom AI summary prompt, lighter recent-record loading, and migration hardening.
 - `v0.7`: Weekly review, calendar view, and weekly/monthly reports.
 - `v0.8`: Open-source polish, packaging, and documentation.
 

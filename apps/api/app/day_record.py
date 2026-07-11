@@ -9,9 +9,13 @@ from app.config import get_settings
 from app.db import get_connection
 
 
-def build_day_record(target_date: str) -> dict[str, Any]:
+def build_day_record(target_date: str, include_activity: bool = True) -> dict[str, Any]:
     settings = get_settings()
-    activity = ActivityWatchClient(settings.activitywatch_url).day_summary(target_date).to_dict()
+    activity = (
+        ActivityWatchClient(settings.activitywatch_url).day_summary(target_date).to_dict()
+        if include_activity
+        else {"available": False, "message": "Skipped for batch query.", "totalSeconds": 0, "bucketCount": 0, "topApps": [], "topTitles": []}
+    )
     journal = _read_journal(target_date)
     schedule_blocks = _read_schedule_blocks(target_date)
     summaries = _read_ai_summaries(target_date)
@@ -29,7 +33,7 @@ def build_day_record(target_date: str) -> dict[str, Any]:
 
 def list_recent_day_records(days: int) -> list[dict[str, Any]]:
     today = date_type.today()
-    return [build_day_record((today - timedelta(days=offset)).isoformat()) for offset in range(days)]
+    return [build_day_record((today - timedelta(days=offset)).isoformat(), include_activity=False) for offset in range(days)]
 
 
 def read_goal(goal_id: int) -> dict[str, Any] | None:
