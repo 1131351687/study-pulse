@@ -1,14 +1,11 @@
 # Changelog
 
-## Unreleased (2026-07-11)
+## Unreleased (2026-07-12)
 
-- **日志 Markdown 支持**：今日日志新增编辑/预览切换，日程记录中的日志内容也会按 Markdown 渲染，适合记录标题、列表、代码片段和复盘结构。
-- **自定义 AI 总结 Prompt**：AI 设置新增 summary prompt，用户可以分别定制“每日总结”和“今日规划”的提示词；系统仍会自动追加 JSON 输出格式要求，保证结果可解析。
-- **AI 提示词集中管理**：设置页新增“AI 提示词”区域，集中编辑规划 prompt 和总结 prompt，AI 配置页保留 provider、endpoint、model、API key 等连接配置。
-- **AI 规划任务保留原始属性**：确认添加 AI 推荐任务时，会保留 AI 返回的 plannedFor 和 priority，而不是统一覆盖为 today/normal。
-- **近期记录查询更轻量**：批量读取最近日期记录时跳过 ActivityWatch 查询，避免历史记录页面或 AI 上下文构建时反复请求本地活动数据。
-- **数据库迁移更稳健**：开启 SQLite 外键约束，并在迁移时先检查列是否存在再添加 planning_prompt、summary_prompt、for_date 和里程碑描述字段。
-- **清理废弃历史路由**：移除旧 history 路由接入和前端未使用的历史/日程 API 包装，减少维护负担。
+- **MCP Server 里程碑工具**：新增 `list_milestones`、`create_milestone`、`update_milestone`、`delete_milestone` 四个工具，MCP 工具总数从 10 增至 14。
+- **学习目标页面卡片化**：列表改卡片布局，内嵌里程碑进度条 + 完成计数；状态用彩色徽章（进行中绿/已暂停灰）替代纯文字；默认折叠只显名称，点击展开查看详情。
+- **移除 AI 补全描述按钮**：避免误触导致目标描述被 AI 覆盖。
+- **优化 MCP 接入文档**：docs/USAGE.md 新增 OpenCode MCP 配置说明。
 
 ## v0.6 (2026-07-06)
 

@@ -194,6 +194,154 @@ def create_goal(name: str, description: str = "", current_focus: str = "") -> st
     )
 
 
+# Milestone tools
+
+
+@mcp.tool()
+def list_milestones(goal_id: int) -> str:
+    """List all milestones for a learning goal, ordered by position.
+
+    Returns an array of milestone objects with id, goal_id, title,
+    description, completed, position, and timestamps.
+    """
+    _ensure_db()
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, goal_id, title, description, completed, position, created_at, updated_at FROM goal_milestones WHERE goal_id = ? ORDER BY position ASC, id ASC",
+            (goal_id,),
+        ).fetchall()
+    milestones = [
+        {
+            "id": row["id"],
+            "goalId": row["goal_id"],
+            "title": row["title"],
+            "description": row["description"],
+            "completed": bool(row["completed"]),
+            "position": row["position"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        }
+        for row in rows
+    ]
+    return json.dumps(milestones, ensure_ascii=False)
+
+
+@mcp.tool()
+def create_milestone(goal_id: int, title: str, description: str = "") -> str:
+    """Create a new milestone for a learning goal.
+
+    Args:
+        goal_id: ID of the parent learning goal.
+        title: Milestone title.
+        description: Optional description of the milestone.
+
+    Returns the created milestone as JSON.
+    """
+    _ensure_db()
+    title = title.strip()
+    if not title:
+        return json.dumps({"error": "Milestone title is required."}, ensure_ascii=False)
+    with get_connection() as conn:
+        max_pos = conn.execute(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM goal_milestones WHERE goal_id = ?",
+            (goal_id,),
+        ).fetchone()[0]
+        cursor = conn.execute(
+            "INSERT INTO goal_milestones (goal_id, title, description, position, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+            (goal_id, title, description.strip(), max_pos),
+        )
+        row = conn.execute(
+            "SELECT id, goal_id, title, description, completed, position, created_at, updated_at FROM goal_milestones WHERE id = ?",
+            (cursor.lastrowid,),
+        ).fetchone()
+    return json.dumps(
+        {
+            "id": row["id"],
+            "goalId": row["goal_id"],
+            "title": row["title"],
+            "description": row["description"],
+            "completed": bool(row["completed"]),
+            "position": row["position"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        },
+        ensure_ascii=False,
+    )
+
+
+@mcp.tool()
+def update_milestone(milestone_id: int, title: str | None = None, description: str | None = None, completed: bool | None = None) -> str:
+    """Update a milestone's title, description, or completion status.
+
+    Args:
+        milestone_id: ID of the milestone to update.
+        title: New title (optional).
+        description: New description (optional).
+        completed: New completion status (optional).
+
+    Returns the updated milestone as JSON.
+    """
+    _ensure_db()
+    updates: list[str] = []
+    values: list[object] = []
+
+    if title is not None:
+        t = title.strip()
+        if not t:
+            return json.dumps({"error": "Milestone title cannot be empty."}, ensure_ascii=False)
+        updates.append("title = ?")
+        values.append(t)
+    if description is not None:
+        updates.append("description = ?")
+        values.append(description)
+    if completed is not None:
+        updates.append("completed = ?")
+        values.append(1 if completed else 0)
+
+    if not updates:
+        return json.dumps({"error": "No fields to update."}, ensure_ascii=False)
+
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    values.append(milestone_id)
+
+    with get_connection() as conn:
+        conn.execute(f"UPDATE goal_milestones SET {', '.join(updates)} WHERE id = ?", values)
+        row = conn.execute(
+            "SELECT id, goal_id, title, description, completed, position, created_at, updated_at FROM goal_milestones WHERE id = ?",
+            (milestone_id,),
+        ).fetchone()
+
+    if row is None:
+        return json.dumps({"error": "Milestone not found."}, ensure_ascii=False)
+    return json.dumps(
+        {
+            "id": row["id"],
+            "goalId": row["goal_id"],
+            "title": row["title"],
+            "description": row["description"],
+            "completed": bool(row["completed"]),
+            "position": row["position"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+        },
+        ensure_ascii=False,
+    )
+
+
+@mcp.tool()
+def delete_milestone(milestone_id: int) -> str:
+    """Delete a milestone by its ID.
+
+    Returns {"deleted": true} on success.
+    """
+    _ensure_db()
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM goal_milestones WHERE id = ?", (milestone_id,))
+    if cursor.rowcount == 0:
+        return json.dumps({"error": "Milestone not found."}, ensure_ascii=False)
+    return json.dumps({"deleted": True})
+
+
 # Task tools
 
 

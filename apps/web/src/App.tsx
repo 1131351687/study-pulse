@@ -36,7 +36,6 @@ import {
   fetchTodayActivity,
   generateAISummary,
   generateAIPlan,
-  expandGoalDescription,
   fetchMilestones,
   createMilestone,
   updateMilestone,
@@ -536,8 +535,6 @@ function GoalsView({ language }: { language: Language }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
-  const [expanding, setExpanding] = useState<number | null>(null);
-  const [expandError, setExpandError] = useState<string | null>(null);
   const [milestoneModalGoalId, setMilestoneModalGoalId] = useState<number | null>(null);
   const [modalMilestones, setModalMilestones] = useState<GoalMilestone[]>([]);
   const [modalLoading, setModalLoading] = useState(false);
@@ -546,15 +543,34 @@ function GoalsView({ language }: { language: Language }) {
   const [editingMsId, setEditingMsId] = useState<number | null>(null);
   const [editingMsTitle, setEditingMsTitle] = useState("");
   const [editingMsDesc, setEditingMsDesc] = useState("");
+  const [milestoneCounts, setMilestoneCounts] = useState<Record<number, { total: number; completed: number }>>({});
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  const loadMilestoneCounts = useCallback(async (goals: LearningGoal[]) => {
+    const entries = await Promise.all(
+      goals.map(async (g) => {
+        try {
+          const ms = await fetchMilestones(g.id);
+          return [g.id, { total: ms.length, completed: ms.filter((m) => m.completed).length }] as const;
+        } catch {
+          return [g.id, { total: 0, completed: 0 }] as const;
+        }
+      }),
+    );
+    setMilestoneCounts(Object.fromEntries(entries));
+  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
     fetchGoals()
-      .then(setGoals)
+      .then((goals) => {
+        setGoals(goals);
+        loadMilestoneCounts(goals);
+      })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load goals"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [loadMilestoneCounts]);
 
   const loadModalMilestones = useCallback(() => {
     if (milestoneModalGoalId === null) return;
@@ -588,15 +604,6 @@ function GoalsView({ language }: { language: Language }) {
       .finally(() => setCreating(false));
   };
 
-  const handleExpand = (goal: LearningGoal) => {
-    setExpanding(goal.id);
-    setExpandError(null);
-    expandGoalDescription(goal.id)
-      .then(() => load())
-      .catch((err: unknown) => setExpandError(err instanceof Error ? err.message : "Failed to expand description"))
-      .finally(() => setExpanding(null));
-  };
-
   const handleToggleActive = (goal: LearningGoal) => {
     updateGoal(goal.id, { active: !goal.active }).then(load).catch((err: unknown) =>
       setError(err instanceof Error ? err.message : "Failed to update goal"),
@@ -607,6 +614,12 @@ function GoalsView({ language }: { language: Language }) {
     deleteGoal(goal.id).then(load).catch((err: unknown) =>
       setError(err instanceof Error ? err.message : "Failed to delete goal"),
     );
+  };
+
+  const handleCloseMilestoneModal = () => {
+    setMilestoneModalGoalId(null);
+    // Refresh milestone counts for all goals since data may have changed
+    loadMilestoneCounts(goals);
   };
 
   if (loading) {
@@ -636,53 +649,97 @@ function GoalsView({ language }: { language: Language }) {
       </Panel>
 
       <Panel title={language === "zh" ? `学习目标（${goals.length}）` : `Goals (${goals.length})`}>
-        {expandError && <p className="status-note warning">{expandError}</p>}
         {goals.length === 0 ? (
           <p className="empty-state">{language === "zh" ? "还没有学习目标。" : "No goals yet."}</p>
         ) : (
-          <ul className="item-list">
-            {goals.map((goal) => (
-              <li key={goal.id} className="item-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <strong>{goal.name}</strong>
-                  <small>
-                    {goal.description || "--"} ·{" "}
-                    {goal.active ? (language === "zh" ? "进行中" : "Active") : (language === "zh" ? "已暂停" : "Paused")}
-                  </small>
-                  <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-                    <button
-                      className="icon-button"
-                      disabled={expanding === goal.id}
-                      onClick={() => handleExpand(goal)}
-                      title={language === "zh" ? "AI 补全描述" : "AI expand description"}
-                      type="button"
-                    >
-                      <Sparkles aria-hidden="true" size={14} />
-                    </button>
-                    <button
-                      className="icon-button"
-                      onClick={() => { setMilestoneModalGoalId(goal.id); }}
-                      title={language === "zh" ? "里程碑" : "Milestones"}
-                      type="button"
-                    >
-                      📌
-                    </button>
-                    <button className="secondary-button" onClick={() => handleToggleActive(goal)} type="button">
-                      {goal.active ? (language === "zh" ? "暂停" : "Pause") : (language === "zh" ? "激活" : "Activate")}
-                    </button>
-                    <button className="icon-button" onClick={() => handleDelete(goal)} type="button">
-                      <Trash2 aria-hidden="true" size={16} />
-                    </button>
+          <div className="goal-grid">
+            {goals.map((goal) => {
+              const msCount = milestoneCounts[goal.id];
+              const totalMs = msCount?.total ?? 0;
+              const completedMs = msCount?.completed ?? 0;
+              const pct = totalMs > 0 ? (completedMs / totalMs) * 100 : 0;
+              const isExpanded = expandedId === goal.id;
+              return (
+                <div key={goal.id} className={`goal-card${isExpanded ? " expanded" : ""}`}>
+                  <div className="goal-card-header" onClick={() => setExpandedId(isExpanded ? null : goal.id)}>
+                    <div className="goal-card-top">
+                      <h4 className="goal-card-name">{goal.name}</h4>
+                      <span className={`goal-status-badge ${goal.active ? "active" : "paused"}`}>
+                        {goal.active
+                          ? (language === "zh" ? "进行中" : "Active")
+                          : (language === "zh" ? "已暂停" : "Paused")}
+                      </span>
+                    </div>
+                    <span className="goal-expand-icon">{isExpanded ? "▾" : "▸"}</span>
                   </div>
+
+                  {isExpanded && (
+                    <>
+                      {goal.description && (
+                        <p className="goal-card-desc">{goal.description}</p>
+                      )}
+
+                      {totalMs > 0 && (
+                        <div className="goal-progress-section">
+                          <div className="goal-progress-header">
+                            <span>{language === "zh" ? "里程碑进度" : "Milestone Progress"}</span>
+                            <span>{completedMs}/{totalMs}</span>
+                          </div>
+                          <div className="goal-progress-bar">
+                            <span className="goal-progress-bar-fill" style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="goal-card-footer">
+                        <div className="goal-milestone-info">
+                          📌&nbsp;
+                          <span>
+                            {totalMs > 0
+                              ? (language === "zh"
+                                  ? `${completedMs}/${totalMs} 里程碑`
+                                  : `${completedMs}/${totalMs} milestones`)
+                              : (language === "zh" ? "暂无里程碑" : "No milestones")}
+                          </span>
+                        </div>
+                        <div className="goal-card-actions">
+                          <button
+                            className="goal-action-btn primary-action"
+                            onClick={() => { setMilestoneModalGoalId(goal.id); }}
+                            title={language === "zh" ? "管理里程碑" : "Manage milestones"}
+                            type="button"
+                          >
+                            📌
+                          </button>
+                          <button
+                            className="goal-action-btn"
+                            onClick={() => handleToggleActive(goal)}
+                            title={goal.active ? (language === "zh" ? "暂停" : "Pause") : (language === "zh" ? "激活" : "Activate")}
+                            type="button"
+                          >
+                            {goal.active ? <SquarePower aria-hidden="true" size={14} /> : <SquarePower aria-hidden="true" size={14} />}
+                          </button>
+                          <button
+                            className="goal-action-btn danger"
+                            onClick={() => handleDelete(goal)}
+                            title={language === "zh" ? "删除" : "Delete"}
+                            type="button"
+                          >
+                            <Trash2 aria-hidden="true" size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
-              </li>
-            ))}
-          </ul>
+              );
+            })}
+          </div>
         )}
       </Panel>
 
       {milestoneModalGoalId !== null && (
-        <div className="modal-overlay" onClick={() => setMilestoneModalGoalId(null)}>
+        <div className="modal-overlay" onClick={handleCloseMilestoneModal}>
           <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
@@ -691,7 +748,7 @@ function GoalsView({ language }: { language: Language }) {
                   · {language === "zh" ? "里程碑" : "Milestones"}
                 </span>
               </h3>
-              <button className="modal-close" onClick={() => setMilestoneModalGoalId(null)} type="button">✕</button>
+              <button className="modal-close" onClick={handleCloseMilestoneModal} type="button">✕</button>
             </div>
 
             {modalLoading ? (
